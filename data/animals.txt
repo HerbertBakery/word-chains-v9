@@ -1,0 +1,14 @@
+dog
+cat
+horse
+cow
+fox
+bear
+lion
+tiger
+wolf
+sheep
+goat
+dolphin
+whale
+shark
