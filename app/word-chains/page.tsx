@@ -163,7 +163,8 @@ export default function WordChains() {
   const [lives, setLives] = useState(3);
   const [timeLeft, setTimeLeft] = useState(30); // 30 seconds
   const [msg, setMsg] = useState("");
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   // post-game leaderboard prompt
   const [showNamePrompt, setShowNamePrompt] = useState(false);
@@ -278,15 +279,29 @@ export default function WordChains() {
 
   /** ===================== Timer handling ===================== */
   useEffect(() => {
-    if (!started || paused) return;
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => setTimeLeft((t) => t - 1), 1000);
-    return () => timerRef.current && clearInterval(timerRef.current);
-  }, [started, last, paused]);
+  if (!started || paused) return;
+  if (timerRef.current) {
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+  timerRef.current = setInterval(() => setTimeLeft((t) => t - 1), 1000);
 
-  useEffect(() => {
-    if (paused && timerRef.current) clearInterval(timerRef.current);
-  }, [paused]);
+  return () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+}, [started, last, paused]);
+
+
+ useEffect(() => {
+  if (paused && timerRef.current) {
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+}, [paused]);
+
 
   useEffect(() => {
     if (started && timeLeft <= 0) loseLife("Time's up!");
