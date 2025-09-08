@@ -1,23 +1,9 @@
 "use client";
+
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-
-function normalize(raw: string) {
-  return (raw || "").trim().toLowerCase();
-}
-
-// Friendlier + slightly less rigid: allow letters, numbers, ".", "_",
-// disallow leading/trailing dot/underscore and consecutive dot/underscore. 3–20 chars.
-function validate(u: string): { ok: true } | { ok: false; reason: string } {
-  const s = normalize(u);
-  if (s.length < 3 || s.length > 20) return { ok: false, reason: "Use 3–20 characters." };
-  if (!/^[a-z0-9._]+$/.test(s)) return { ok: false, reason: "Only a–z, 0–9, dot (.) and underscore (_)." };
-  if (/^[._]/.test(s) || /[._]$/.test(s)) return { ok: false, reason: "Can't start or end with \".\" or \"_\"." };
-  if (/[._]{2,}/.test(s)) return { ok: false, reason: "No consecutive dots/underscores like \"..\" or \"__\"." };
-  if (s.startsWith("anon_")) return { ok: false, reason: "Please choose a custom name (not starting with anon_)." };
-  return { ok: true };
-}
+import { normalizeUsername, validateUsername, USERNAME_MIN, USERNAME_MAX } from "@/lib/username";
 
 export default function OnboardingPage() {
   const { data, status } = useSession();
@@ -35,10 +21,9 @@ export default function OnboardingPage() {
     if (user?.username) router.push("/leaderboard");
   }, [status, user, router]);
 
-  // live validation
+  // live validation as user types
   React.useEffect(() => {
-    const s = normalize(raw);
-    const v = validate(s);
+    const v = validateUsername(raw);
     setHint(v.ok ? null : v.reason);
   }, [raw]);
 
@@ -46,14 +31,14 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const username = normalize(raw);
 
-    const v = validate(username);
+    const v = validateUsername(raw);
     if (!v.ok) {
       setSaving(false);
       setError(v.reason);
       return;
     }
+    const username = normalizeUsername(raw);
 
     try {
       const res = await fetch("/api/user/username", {
@@ -80,24 +65,32 @@ export default function OnboardingPage() {
         This will appear on the global leaderboard and your public profile.
       </p>
 
-      {/* noValidate prevents the browser’s vague pattern error */}
+      {/* noValidate = avoid the browser's vague "match the requested format" popup */}
       <form onSubmit={submit} noValidate className="space-y-3">
         <input
           type="text"
           value={raw}
           onChange={(e) => setRaw(e.target.value.toLowerCase())}
           placeholder="e.g. herbert.saurus"
-          maxLength={20}
+          maxLength={USERNAME_MAX}
           className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
           aria-describedby="username-rules"
           required
         />
         <p id="username-rules" className="text-xs text-neutral-500">
-          Use 3–20 chars. a–z, 0–9, “.” and “_”. No starting/ending with “.” or “_”, and no “..” or “__”.
+          Use {USERNAME_MIN}–{USERNAME_MAX} chars. a–z, 0–9, “.” and “_”. No starting/ending with “.” or “_”, and no “..” or “__”.
         </p>
 
-        {hint && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs">{hint}</div>}
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 text-sm">{error}</div>}
+        {hint && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs">
+            {hint}
+          </div>
+        )}
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"
@@ -109,16 +102,4 @@ export default function OnboardingPage() {
       </form>
     </div>
   );
-}
-
-export function getClientUserId(): string {
-  if (typeof window === "undefined") return "server";
-  const KEY = "wc_uid";
-  let id = localStorage.getItem(KEY);
-  if (!id) {
-    const rand = Math.random().toString(36).slice(2, 10);
-    id = `anon_${rand}`;
-    localStorage.setItem(KEY, id);
-  }
-  return id;
 }
