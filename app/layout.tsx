@@ -1,13 +1,24 @@
+// app/layout.tsx
 import "./globals.css";
-import Providers from "./providers";
+import PageShell from "./components/PageShell";
+import Header from "./components/Header";
+import Providers from "./providers"; // ← delete this line & wrapper if not using NextAuth
 
-export const metadata = { title: "Word Chains" };
+export const metadata = {
+  title: "Word Chains",
+  description: "Chain words. Stack multipliers.",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <PageShell>
+            <Header />
+            {children}
+          </PageShell>
+        </Providers>
       </body>
     </html>
   );

@@ -1,7 +1,8 @@
+// app/stats/page.tsx
 "use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import GameTopBar from "@/app/components/GameTopBar";
 
 export type Stats = {
   totalWords: number;
@@ -334,14 +335,13 @@ export default function StatsPage() {
   }, [stats, peakMultipliers]);
 
   // REPLACE the old sessionsPlayed useMemo with this:
-const sessionsPlayed = useMemo(() => {
-  const s1 = Number(stats?.totalSessions ?? 0);
-  const s2 = Number(localSessionsCount ?? 0);
-  const s3 = Number(sessionSpeeds?.length ?? 0);
-  const best = Math.max(s1, s2, s3);
-  return best > 0 ? best : undefined;
-}, [stats, localSessionsCount, sessionSpeeds]);
-
+  const sessionsPlayed = useMemo(() => {
+    const s1 = Number(stats?.totalSessions ?? 0);
+    const s2 = Number(localSessionsCount ?? 0);
+    const s3 = Number(sessionSpeeds?.length ?? 0);
+    const best = Math.max(s1, s2, s3);
+    return best > 0 ? best : undefined;
+  }, [stats, localSessionsCount, sessionSpeeds]);
 
   const wordSpeedAverageMs = useMemo(() => {
     if (!sessionSpeeds.length) return undefined;
@@ -459,8 +459,8 @@ const sessionsPlayed = useMemo(() => {
   if (!stats) {
     return (
       <>
-        <GameTopBar />
-        <div className="mx-auto max-w-5xl p-6">
+        {/* Content only — global Header/PageShell come from app/layout.tsx */}
+        <div className="space-y-6">
           <Card>
             <div className="text-sm text-neutral-700">
               No stats yet. Play a game (and sign in) so your runs are saved to your account.
@@ -473,13 +473,13 @@ const sessionsPlayed = useMemo(() => {
 
   return (
     <>
-      <GameTopBar />
-      <div className="mx-auto max-w-6xl p-6 space-y-6">
+      {/* Content only — global Header/PageShell come from app/layout.tsx */}
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Your Word Chains Pokedex</h1>
-            <p className="text-sm text-neutral-500 mt-1">
+            <p className="mt-1 text-sm text-neutral-500">
               Totals, records, completion, and grindable badges.
               <span className="ml-2 text-xs italic text-neutral-400">
                 {statsServer ? "Data source: server (all-time)" : "Data source: local (last session backup)"}
@@ -490,7 +490,7 @@ const sessionsPlayed = useMemo(() => {
             <MetricSelector value={metric} onChange={setMetric} />
             <button
               onClick={handleGoLeaderboard}
-              className="mt-2 w-full rounded-xl bg-black text-white text-sm font-medium px-4 py-2 hover:opacity-90"
+              className="mt-2 w-full rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             >
               View Leaderboard for this Metric
             </button>
@@ -498,30 +498,36 @@ const sessionsPlayed = useMemo(() => {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {kpis.map((k) => (
-            <Card key={k.label}><KPI label={k.label} value={<span>{k.value}</span>} hint={k.hint} /></Card>
+            <Card key={k.label}>
+              <KPI label={k.label} value={<span>{k.value}</span>} hint={k.hint} />
+            </Card>
           ))}
         </div>
 
         {/* Records */}
         <Card title="Records">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {records.map((r) => (<Row key={r.label} label={r.label} right={<span>{r.value}</span>} />))}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {records.map((r) => (
+              <Row key={r.label} label={r.label} right={<span>{r.value}</span>} />
+            ))}
           </div>
         </Card>
 
         {/* Category Completion */}
         <Card title="Category Completion">
-          {loadingTotals && (<div className="text-sm text-neutral-500 mb-2">Loading category totals…</div>)}
+          {loadingTotals && <div className="mb-2 text-sm text-neutral-500">Loading category totals…</div>}
           <div className="space-y-4">
             {completion.map((c) => (
               <div key={c.key}>
-                <div className="flex items-center justify-between mb-1">
+                <div className="mb-1 flex items-center justify-between">
                   <div className="text-sm font-medium">{c.label}</div>
                   <div className="text-xs text-neutral-500">
                     {c.total != null && c.total > 0 ? (
-                      <>{c.found} / {c.total} ({c.pct != null ? formatPct(c.pct) : "—"})</>
+                      <>
+                        {c.found} / {c.total} ({c.pct != null ? formatPct(c.pct) : "—"})
+                      </>
                     ) : (
                       <span className="italic">no data file (expected at {c.path})</span>
                     )}
@@ -532,12 +538,17 @@ const sessionsPlayed = useMemo(() => {
             ))}
           </div>
           <div className="mt-4 text-sm text-neutral-600">
-            Overall completion across shown categories: {(() => {
+            Overall completion across shown categories:{" "}
+            {(() => {
               const v = completion.filter((r) => (r.total ?? 0) > 0);
               if (!v.length) return <span className="italic">connect category data files to see overall completion</span>;
               const totalAll = v.reduce((acc, r) => acc + (r.total ?? 0), 0);
               const foundAll = v.reduce((acc, r) => acc + (r.found ?? 0), 0);
-              return <><b>{foundAll}</b> / <b>{totalAll}</b> ({formatPct(pct(foundAll, totalAll))})</>;
+              return (
+                <>
+                  <b>{foundAll}</b> / <b>{totalAll}</b> ({formatPct(pct(foundAll, totalAll))})
+                </>
+              );
             })()}
           </div>
         </Card>
@@ -545,7 +556,7 @@ const sessionsPlayed = useMemo(() => {
         {/* Power-ups */}
         <Card title="Power-ups Used">
           {stats.powerups && Object.keys(stats.powerups).length > 0 ? (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {Object.entries(stats.powerups).map(([k, v]) => (
                 <li key={k} className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2">
                   <span className="text-sm">{k}</span>
@@ -574,18 +585,22 @@ function ShareExport({ stats }: { stats: Stats }) {
   const [copied, setCopied] = useState(false);
   const json = useMemo(() => JSON.stringify(stats, null, 2), [stats]);
   const handleCopy = async () => {
-    try { await navigator.clipboard.writeText(json); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
   };
   return (
     <Card title="Share / Export">
-      <p className="text-sm text-neutral-600 mb-3">Copy your stats JSON (backup or send to support):</p>
+      <p className="mb-3 text-sm text-neutral-600">Copy your stats JSON (backup or send to support):</p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <button onClick={handleCopy} className="rounded-xl bg-neutral-100 hover:bg-neutral-200 text-sm font-medium px-4 py-2">
+        <button onClick={handleCopy} className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-medium hover:bg-neutral-200">
           {copied ? "Copied!" : "Copy JSON"}
         </button>
         <details className="w-full">
           <summary className="cursor-pointer text-sm text-neutral-500">Preview JSON</summary>
-          <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-neutral-50 p-3 text-xs text-neutral-700 border border-neutral-200">
+          <pre className="mt-2 max-h-64 overflow-auto rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
             {json}
           </pre>
         </details>
@@ -606,7 +621,7 @@ function BadgeGrid({
   }>;
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {badges.map((b) => (
         <div key={b.id} className="rounded-xl border border-neutral-200 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -624,7 +639,7 @@ function BadgeGrid({
               const locked = !t.achieved;
               const showTarget = t.target && t.target > 0;
               return (
-                <div key={t.label} className={`rounded-lg p-3 ${locked ? "bg-neutral-50" : "bg-white"} border border-neutral-200`}>
+                <div key={t.label} className={`rounded-lg border border-neutral-200 p-3 ${locked ? "bg-neutral-50" : "bg-white"}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{t.icon}</span>
@@ -632,11 +647,10 @@ function BadgeGrid({
                     </div>
                     <div className="text-xs text-neutral-500">{showTarget ? `${Math.min(100, Math.floor(pctNow))}%` : "—"}</div>
                   </div>
-                  <div className="mt-2">
-                    {showTarget ? <Progress pct={pctNow} /> : <div className="text-xs text-neutral-400">No total available</div>}
-                  </div>
+                  <div className="mt-2">{showTarget ? <Progress pct={pctNow} /> : <div className="text-xs text-neutral-400">No total available</div>}</div>
                   <div className="mt-1 text-xs text-neutral-500">
-                    {showTarget ? `${t.current} / ${t.target}` : `${t.current} / —`}{t.hint ? ` · ${t.hint}` : ""}
+                    {showTarget ? `${t.current} / ${t.target}` : `${t.current} / —`}
+                    {t.hint ? ` · ${t.hint}` : ""}
                   </div>
                 </div>
               );

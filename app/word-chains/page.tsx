@@ -1,6 +1,5 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import GameTopBar from "../components/GameTopBar";
 
 /** ===================== Types & constants ===================== */
 type ChainKey = "name" | "animal" | "country" | "food" | "brand" | "screen";
@@ -945,7 +944,7 @@ const endGame = async (reason: string) => {
   /** ===================== UI ===================== */
   return (
     <>
-      <GameTopBar />
+  
       <div className="grid gap-6 md:grid-cols-3">
         {/* Post-game leaderboard prompt */}
         {showNamePrompt && (

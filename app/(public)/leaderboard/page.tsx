@@ -1,5 +1,6 @@
+// app/leaderboard/page.tsx
 "use client";
-import GameTopBar from "../../components/GameTopBar";
+
 import React, { useEffect, useState } from "react";
 
 const METRICS = [
@@ -44,7 +45,9 @@ export default function LeaderboardPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [metric]);
 
   const label = METRICS.find((m) => m.value === metric)?.label ?? "Value";
@@ -59,11 +62,8 @@ export default function LeaderboardPage() {
 
   return (
     <>
-      {/* 🔝 Always-visible toolbar */}
-      <GameTopBar />
-
-      {/* ⬇️ Your existing page content remains unchanged */}
-      <div className="mx-auto max-w-5xl p-6 space-y-6">
+      {/* Content only — global Header/PageShell come from app/layout.tsx */}
+      <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Global Leaderboard</h1>
@@ -77,57 +77,68 @@ export default function LeaderboardPage() {
               onChange={(e) => setMetric(e.target.value)}
             >
               {METRICS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
               ))}
             </select>
           </label>
         </div>
 
-        <div className="rounded-2xl border bg-white/70 shadow-sm overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border bg-white/70 shadow-sm">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-neutral-600">
               <tr>
-                <th className="text-left p-3 w-14">#</th>
-                <th className="text-left p-3">Player</th>
-                <th className="text-right p-3">{label}</th>
+                <th className="w-14 p-3 text-left">#</th>
+                <th className="p-3 text-left">Player</th>
+                <th className="p-3 text-right">{label}</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={3} className="p-6 text-center text-neutral-500">Loading…</td></tr>
+                <tr>
+                  <td colSpan={3} className="p-6 text-center text-neutral-500">
+                    Loading…
+                  </td>
+                </tr>
               )}
               {!loading && error && (
-                <tr><td colSpan={3} className="p-6">
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">
-                    {error}
-                  </div>
-                </td></tr>
+                <tr>
+                  <td colSpan={3} className="p-6">
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</div>
+                  </td>
+                </tr>
               )}
               {!loading && !error && rows.length === 0 && (
-                <tr><td colSpan={3} className="p-6 text-center text-neutral-500">
-                  No data yet. Finish a game (signed in) so it posts to <code className="px-1 py-0.5 rounded bg-neutral-100">/api/stats/ingest</code>.
-                </td></tr>
-              )}
-              {!loading && !error && rows.map((r, idx) => (
-                <tr
-                  key={r.userId}
-                  className="border-t hover:bg-neutral-50 cursor-pointer"
-                  onClick={() => goTo(r)}
-                >
-                  <td className="p-3">{idx + 1}</td>
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-full bg-neutral-200 overflow-hidden">
-                        {r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : null}
-                      </div>
-                      <div className="font-medium">
-                        {r.username || r.handle ? `@${r.handle ?? r.username}` : r.userId}
-                      </div>
-                    </div>
+                <tr>
+                  <td colSpan={3} className="p-6 text-center text-neutral-500">
+                    No data yet. Finish a game (signed in) so it posts to{" "}
+                    <code className="rounded bg-neutral-100 px-1 py-0.5">/api/stats/ingest</code>.
                   </td>
-                  <td className="p-3 text-right font-semibold">{r.value}</td>
                 </tr>
-              ))}
+              )}
+              {!loading &&
+                !error &&
+                rows.map((r, idx) => (
+                  <tr
+                    key={r.userId}
+                    className="cursor-pointer border-t hover:bg-neutral-50"
+                    onClick={() => goTo(r)}
+                  >
+                    <td className="p-3">{idx + 1}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 overflow-hidden rounded-full bg-neutral-200">
+                          {r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : null}
+                        </div>
+                        <div className="font-medium">
+                          {r.username || r.handle ? `@${r.handle ?? r.username}` : r.userId}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-3 text-right font-semibold">{r.value}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -139,11 +150,12 @@ export default function LeaderboardPage() {
   );
 }
 
-function UserModal({ userId, onClose }: { userId: string; onClose: ()=>void }) {
+function UserModal({ userId, onClose }: { userId: string; onClose: () => void }) {
   const [data, setData] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    let cancelled=false;
+    let cancelled = false;
     (async () => {
       try {
         setError(null);
@@ -155,18 +167,24 @@ function UserModal({ userId, onClose }: { userId: string; onClose: ()=>void }) {
         if (!cancelled) setError(e?.message || "Failed to load profile.");
       }
     })();
-    return () => {cancelled=true};
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-semibold">{data?.username ?? userId}</div>
-          <button onClick={onClose} className="text-sm text-neutral-500">Close</button>
+          <button onClick={onClose} className="text-sm text-neutral-500">
+            Close
+          </button>
         </div>
         {!data && !error && <div className="text-sm text-neutral-500">Loading…</div>}
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 text-sm">{error}</div>}
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        )}
         {data && (
           <div className="space-y-2 text-sm">
             <div className="grid grid-cols-2 gap-2">
@@ -179,8 +197,8 @@ function UserModal({ userId, onClose }: { userId: string; onClose: ()=>void }) {
               <Stat label="Highest Multiplier" value={data.stats?.highestMultiplier ?? 0} />
               <Stat label="Best Score" value={data.stats?.bestScore ?? 0} />
             </div>
-            <div className="pt-2 border-t">
-              <div className="font-medium mb-1">Badges</div>
+            <div className="border-t pt-2">
+              <div className="mb-1 font-medium">Badges</div>
               <div className="text-neutral-500">{data.badges ?? 0} unlocked</div>
             </div>
           </div>
@@ -190,10 +208,10 @@ function UserModal({ userId, onClose }: { userId: string; onClose: ()=>void }) {
   );
 }
 
-function Stat({label, value}:{label:string; value:any}){
+function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-xl border px-3 py-2 bg-neutral-50">
-      <div className="text-neutral-500 text-xs">{label}</div>
+    <div className="rounded-xl border bg-neutral-50 px-3 py-2">
+      <div className="text-xs text-neutral-500">{label}</div>
       <div className="font-semibold">{value}</div>
     </div>
   );
