@@ -1,7 +1,7 @@
 // app/layout.tsx
 import "./globals.css";
 import PageShell from "./components/PageShell";
-import Header from "./components/Header";
+import Header from "./components/header";
 import Providers from "./providers"; // ← delete this line & wrapper if not using NextAuth
 
 export const metadata = {
