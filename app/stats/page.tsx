@@ -305,27 +305,57 @@ export default function StatsPage() {
   }, []);
 
   // Merge server + local so records don't show zero when server omits fields
-  const stats: Stats | null = useMemo(() => {
-    const s = statsServer;
-    const l = statsLocal;
-    if (!s && !l) return null;
-    const max = (a?: number, b?: number) => Math.max(Number(a ?? 0), Number(b ?? 0));
+const stats: Stats | null = useMemo(() => {
+  const s = statsServer;
+  const l = statsLocal;
+  if (!s && !l) return null;
 
-    const merged: Stats = { ...(l || {}), ...(s || {}) };
-    merged.highestWordScore     = max(s?.highestWordScore,     l?.highestWordScore);
-    merged.longestAnimalStreak  = max(s?.longestAnimalStreak,  l?.longestAnimalStreak);
-    merged.longestCountryStreak = max(s?.longestCountryStreak, l?.longestCountryStreak);
-    merged.longestNameStreak    = max(s?.longestNameStreak,    l?.longestNameStreak);
-    merged.longestChain         = max(s?.longestChain,         l?.longestChain);
-    merged.totalWords           = max(s?.totalWords,           l?.totalWords);
-    merged.animals              = max(s?.animals,              l?.animals);
-    merged.countries            = max(s?.countries,            l?.countries);
-    merged.names                = max(s?.names,                l?.names);
-    merged.uniqueWords          = max(s?.uniqueWords,          l?.uniqueWords);
-    merged.linksEarned          = max(s?.linksEarned,          l?.linksEarned);
-    merged.linksSpent           = max(s?.linksSpent,           l?.linksSpent);
-    return merged;
-  }, [statsServer, statsLocal]);
+  const max = (a?: number, b?: number) => Math.max(Number(a ?? 0), Number(b ?? 0));
+
+  // Base satisfies required numeric fields so TS is happy
+  const base: Stats = {
+    totalWords: 0,
+    animals: 0,
+    countries: 0,
+    names: 0,
+    sameLetterWords: 0,
+    longestAnimalStreak: 0,
+    longestCountryStreak: 0,
+    longestNameStreak: 0,
+    highestWordScore: 0,
+    switches: 0,
+    linksEarned: 0,
+    linksSpent: 0,
+    // optional fields – safe defaults
+    bestScore: 0,
+    longestChain: 0,
+    highestMultiplier: 0,
+    totalSessions: 0,
+    uniqueWords: 0,
+    badges: 0,
+  };
+
+  // Merge: local then server override the base
+  const merged: Stats = { ...base, ...(l ?? {}), ...(s ?? {}) };
+
+  // Normalize records to max(server, local)
+  merged.highestWordScore     = max(s?.highestWordScore,     l?.highestWordScore);
+  merged.longestAnimalStreak  = max(s?.longestAnimalStreak,  l?.longestAnimalStreak);
+  merged.longestCountryStreak = max(s?.longestCountryStreak, l?.longestCountryStreak);
+  merged.longestNameStreak    = max(s?.longestNameStreak,    l?.longestNameStreak);
+  merged.longestChain         = max(s?.longestChain,         l?.longestChain);
+
+  merged.totalWords           = max(s?.totalWords,           l?.totalWords);
+  merged.animals              = max(s?.animals,              l?.animals);
+  merged.countries            = max(s?.countries,            l?.countries);
+  merged.names                = max(s?.names,                l?.names);
+  merged.uniqueWords          = max(s?.uniqueWords,          l?.uniqueWords);
+  merged.linksEarned          = max(s?.linksEarned,          l?.linksEarned);
+  merged.linksSpent           = max(s?.linksSpent,           l?.linksSpent);
+
+  return merged;
+}, [statsServer, statsLocal]);
+
 
   // Fallback helpers
   const bestHighestMultiplier = useMemo(() => {
