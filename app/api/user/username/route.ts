@@ -13,12 +13,25 @@ const RESERVED = new Set([
 
 function validateHandle(raw: string) {
   const handle = (raw || "").trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(handle)) {
-    return { ok: false, message: "Usernames must be 3–20 chars: a–z, 0–9, underscore." };
+
+  if (handle.length < 3 || handle.length > 20) {
+    return { ok: false, message: "Use 3–20 characters." };
+  }
+  if (!/^[a-z0-9._]+$/.test(handle)) {
+    return { ok: false, message: "Only a–z, 0–9, dot (.) and underscore (_)." };
+  }
+  if (/^[._]/.test(handle) || /[._]$/.test(handle)) {
+    return { ok: false, message: "Can't start or end with \".\" or \"_\"." };
+  }
+  if (/[._]{2,}/.test(handle)) {
+    return { ok: false, message: "No consecutive dots/underscores." };
   }
   if (RESERVED.has(handle)) return { ok: false, message: "That name is reserved." };
   if (handle.startsWith("anon_")) return { ok: false, message: "Please choose a custom name." };
+
   return { ok: true, handle };
+}
+
 }
 
 export async function POST(req: NextRequest) {
