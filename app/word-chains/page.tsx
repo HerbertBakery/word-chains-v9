@@ -590,31 +590,58 @@ const buildMainTrack = (): Mission[] => {
   }, [unlocked]);
 
   /** ===================== Powerups (unique-word charges) ===================== */
-  type PowerCharges = Record<PowerKey, number>;
-  const [powerCharges, setPowerCharges] = useState<PowerCharges>({
-    name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
-  });
+type PowerCharges = Record<PowerKey, number>;
 
-  // Unique word sets per category and same-letter
-  const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
-    name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
-  });
+const [powerCharges, setPowerCharges] = useState<PowerCharges>({
+  name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
+});
+
+// NEW: thresholds already credited (prevents double-charging)
+const [powerBucketsCredited, setPowerBucketsCredited] = useState<Record<PowerKey, number>>({
+  name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
+});
+
+// Unique word sets per category and same-letter
+const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
+  name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
+});
+
 
   const tryGrantChargeUnique = (key: PowerKey, rawWord: string) => {
-    const need = POWER_THRESHOLDS[key];
-    const wNorm = norm(rawWord);
-    setUniqueSeen((cur) => {
-      const prevSet = cur[key] ?? new Set<string>();
-      if (prevSet.has(wNorm)) return cur; // not unique; do nothing
-      const nxSet = new Set(prevSet); nxSet.add(wNorm);
-      const newCount = nxSet.size;
-      if (need && newCount % need === 0) {
-        setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + 1 }));
+  const need = POWER_THRESHOLDS[key];
+  if (!need) return;
+
+  const wNorm = norm(rawWord);
+
+  setUniqueSeen((cur) => {
+    const prevSet = cur[key] ?? new Set<string>();
+    // If we've already counted this word for this key, do nothing.
+    if (prevSet.has(wNorm)) return cur;
+
+    const prevCount = prevSet.size;
+    const nextSet = new Set(prevSet);
+    nextSet.add(wNorm);
+    const newCount = nextSet.size;
+
+    const newBuckets = Math.floor(newCount / need);
+
+    // Update bucket credits & charges atomically relative to the latest state
+    setPowerBucketsCredited((buckets) => {
+      const prevBuckets = buckets[key] ?? 0;
+      const delta = newBuckets - prevBuckets;
+      if (delta > 0) {
+        setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
         setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label}`);
+        return { ...buckets, [key]: newBuckets };
       }
-      return { ...cur, [key]: nxSet };
+      return buckets;
     });
-  };
+
+    return { ...cur, [key]: nextSet };
+  });
+};
+
+
 
   const usePower = (key: PowerKey) => {
     setPowerCharges((ch) => {
@@ -684,10 +711,12 @@ const buildMainTrack = (): Mission[] => {
     setMissionProgress({});
     setCompletedMissionIds(new Set());
 
-    setPowerCharges({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
-    setUniqueSeen({
-      name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
-    });
+   setPowerCharges({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
+setUniqueSeen({
+  name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
+});
+setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
+
 
     // reset run analytics
     lastAcceptAtRef.current = null;
@@ -960,10 +989,9 @@ const buildMainTrack = (): Mission[] => {
     return { cur, need };
   };
 
-  /** ===================== UI ===================== */
+      /** ===================== UI ===================== */
   return (
     <>
-  
       <div className="grid gap-6 md:grid-cols-3">
         {/* Post-game leaderboard prompt */}
         {showNamePrompt && (
@@ -1005,12 +1033,13 @@ const buildMainTrack = (): Mission[] => {
                 <div>Time Left: {timeLeft}s {paused && <span className="text-xs text-gray-500">(frozen)</span>}</div>
               </div>
               <div>LINKS: {Number(links).toFixed(1)}</div>
+
               <div className="text-sm">
-  Total Multiplier: <b>{fmt(totalMult)}</b>
-  <span className="ml-2 text-xs text-gray-600">
-    (base {totalMultData.catSum.toFixed(2)} + missions +{totalMultData.missionAdd} × same-letter ×{sameMult.toFixed(2)})
-  </span>
-</div>
+                Total Multiplier: <b>{fmt(totalMult)}</b>
+                <span className="ml-2 text-xs text-gray-600">
+                  (base {totalMultData.catSum.toFixed(2)} + missions +{totalMultData.missionAdd} × same-letter ×{sameMult.toFixed(2)})
+                </span>
+              </div>
 
               <div className="space-y-1 pt-2 text-sm">
                 <div>Names: <b>{fmt(chains.name.multiplier)}</b> {chains.name.frozen && "(frozen)"} len {chains.name.length}</div>
@@ -1055,9 +1084,8 @@ const buildMainTrack = (): Mission[] => {
               </div>
             </div>
 
-            {/* Right column: Active missions & Powerups */}
+            {/* Right column: Active missions */}
             <div className="md:col-span-1 space-y-4">
-              {/* Missions: one active per unlocked track */}
               <div className="card">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold">Missions</h3>
@@ -1072,7 +1100,6 @@ const buildMainTrack = (): Mission[] => {
                     const done = ownerCompleted(owner);
                     const pct = ownerProgressPct(owner);
 
-                    // If completed, show blocked panel
                     if (done) {
                       return (
                         <div key={String(owner)} className={`rounded-xl border ${c.border} ${c.solid} p-2 opacity-90`}>
@@ -1082,24 +1109,18 @@ const buildMainTrack = (): Mission[] => {
                               <span className="text-xs text-gray-700">Category progress: <b>100%</b></span>
                             </div>
                             <span className={`text-xs px-2 py-0.5 rounded ${c.badge} ${c.text} border ${c.border}`}>Completed · +10 base</span>
-
                           </div>
                         </div>
                       );
                     }
 
-                    // Active current mission card (single)
                     const m = track[idx];
                     if (!m) return null;
                     const id = m.id;
-                    const progressCurrent =
-                      m.owner === "main" && (m as any).kind === "sequence"
-                        ? (missionProgress[id] ?? 0)
-                        : (missionProgress[id] ?? 0);
-                    const target =
-                      m.owner === "main" && (m as any).kind === "sequence"
-                        ? (m as any).sequence.length
-                        : (m as any).target;
+                    const progressCurrent = missionProgress[id] ?? 0;
+                    const target = m.owner === "main" && (m as any).kind === "sequence"
+                      ? (m as any).sequence.length
+                      : (m as any).target;
                     const bar = Math.min(100, (progressCurrent / target) * 100);
 
                     return (
@@ -1151,135 +1172,225 @@ const buildMainTrack = (): Mission[] => {
                   )}
                 </div>
               </div>
+            </div>
+            {/* end started=true block */}
+          </>
+        )}
+      </div>
 
-              {/* Powerups */}
-              <div className="card">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold">Powerups</h3>
-                  <div className="text-sm text-gray-500">+1 charge per threshold of <b>unique</b> words</div>
-                </div>
-                <div className="space-y-2">
+      {/* ===== Powerups Dock (sticky under the play area; only when game started) ===== */}
+      {started && dict && (
+        <div className="sticky bottom-2 z-40 mt-4">
+          <div className="mx-auto w-[min(100%,1000px)] px-3">
+            <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+              <div className="px-3 py-2 flex items-center justify-between">
+                <div className="text-sm font-semibold">Powerups</div>
+                <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+              </div>
+
+              {/* Wrap into rows, no side scroll */}
+              <div className="px-3 pb-3">
+                <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+                  {/* Countries → NUKE */}
                   {(() => { const p = powerProgress("country"); return (
                     <PowerRow
-                      label="NUKE (Countries)"
-                      charges={powerCharges.country}
+                      icon="💥"
+                      label="NUKE"
+                      info="Countries"
+                      available={powerCharges.country}
                       onUse={() => usePower("country")}
-                      borderClass="border-purple-300"
-                      fillClass={CHAIN_COLORS.country.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.country.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.country > 0}
+                      ringClass="ring-purple-400"
                     />
                   );})()}
+
+                  {/* Names → Freeze */}
                   {(() => { const p = powerProgress("name"); return (
                     <PowerRow
-                      label="Freeze until next answer (Names)"
-                      charges={powerCharges.name}
+                      icon="❄️"
+                      label="Freeze"
+                      info="Names"
+                      available={powerCharges.name}
                       onUse={() => usePower("name")}
-                      borderClass="border-blue-300"
-                      fillClass={CHAIN_COLORS.name.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.name.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.name > 0}
+                      ringClass="ring-blue-400"
                     />
                   );})()}
+
+                  {/* Animals → Wild Surge */}
                   {(() => { const p = powerProgress("animal"); return (
                     <PowerRow
-                      label="Wild Surge +20x (Animals)"
-                      charges={powerCharges.animal}
+                      icon="🐾"
+                      label="Wild Surge"
+                      info="Animals"
+                      available={powerCharges.animal}
                       onUse={() => usePower("animal")}
-                      borderClass="border-green-300"
-                      fillClass={CHAIN_COLORS.animal.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.animal.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.animal > 0}
+                      ringClass="ring-green-400"
                     />
                   );})()}
+
+                  {/* Foods → Extra Life */}
                   {(() => { const p = powerProgress("food"); return (
                     <PowerRow
-                      label="Extra Life (Foods, max 5)"
-                      charges={powerCharges.food}
+                      icon="🍔"
+                      label="Extra Life"
+                      info="Foods"
+                      available={powerCharges.food}
                       onUse={() => usePower("food")}
-                      borderClass="border-amber-300"
-                      fillClass={CHAIN_COLORS.food.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.food.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.food > 0}
+                      ringClass="ring-amber-400"
                     />
                   );})()}
+
+                  {/* Brands → Sponsor +50x */}
                   {(() => { const p = powerProgress("brand"); return (
                     <PowerRow
-                      label="Sponsor Boost +50x next word (Brands)"
-                      charges={powerCharges.brand}
+                      icon="💼"
+                      label="Sponsor +50x"
+                      info="Brands"
+                      available={powerCharges.brand}
                       onUse={() => usePower("brand")}
-                      borderClass="border-rose-300"
-                      fillClass={CHAIN_COLORS.brand.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.brand.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.brand > 0}
+                      ringClass="ring-rose-400"
                     />
                   );})()}
+
+                  {/* TV/Movies → Montage */}
                   {(() => { const p = powerProgress("screen"); return (
                     <PowerRow
-                      label="Montage: freeze 15s (TV/Movies)"
-                      charges={powerCharges.screen}
+                      icon="🎬"
+                      label="Montage"
+                      info="TV/Movies"
+                      available={powerCharges.screen}
                       onUse={() => usePower("screen")}
-                      borderClass="border-teal-300"
-                      fillClass={CHAIN_COLORS.screen.badge}
-                      progress={`${p.cur}/${p.need}`}
+                      fillClass={CHAIN_COLORS.screen.solid}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.screen > 0}
+                      ringClass="ring-teal-400"
                     />
                   );})()}
+
+                  {/* Same-Letter → Mirror Charm */}
                   {(() => { const p = powerProgress("same"); return (
                     <PowerRow
-                      label="Mirror Charm +10x next word (Same-Letter)"
-                      charges={powerCharges.same}
+                      icon="🔁"
+                      label="Mirror Charm"
+                      info="Same-Letter"
+                      available={powerCharges.same}
                       onUse={() => usePower("same")}
-                      borderClass="border-gray-300"
                       fillClass="bg-gray-300"
-                      progress={`${p.cur}/${p.need}`}
                       pct={(p.cur / p.need) * 100}
+                      counter={`${p.cur}/${p.need}`}
+                      ready={powerCharges.same > 0}
+                      ringClass="ring-gray-400"
                     />
                   );})()}
                 </div>
               </div>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </>
   );
-}
+} // ← END WordChains component
 
-/** Small helper component for powerup rows */
+/** Small helper component for powerup rows (tile itself fills; click to use) */
 function PowerRow({
-  label,
-  charges,
+  label,      // POWERUP NAME, e.g. "NUKE"
+  icon,       // one emoji, e.g. "💥"
+  available,  // number available (no "charges" word)
   onUse,
-  borderClass,
-  fillClass,
-  progress,
-  pct,
+  fillClass,  // category color class (e.g. CHAIN_COLORS.country.solid)
+  pct,        // 0..100
+  counter,    // e.g. "7/10"
+  ready,      // glow when true
+  ringClass,  // e.g. "ring-purple-400"
+  info,       // CATEGORY label shown under name (e.g. "Countries")
 }: {
   label: string;
-  charges: number;
+  icon?: string;
+  available: number;
   onUse: () => void;
-  borderClass?: string;
-  fillClass?: string; // e.g. CHAIN_COLORS[cat].badge
-  progress?: string;  // "7/10"
-  pct?: number;       // 0..100
+  fillClass?: string;
+  pct?: number;
+  counter?: string;
+  ready?: boolean;
+  ringClass?: string;
+  info?: string;
 }) {
+  const pctClamped = Math.min(100, Math.max(0, Math.round(pct || 0)));
+  const canUse = available > 0;
+
+  const handleClick = () => {
+    if (canUse) onUse();
+  };
+
   return (
-    <div className={`flex items-center justify-between rounded-lg border p-2 ${borderClass || "border-gray-200"}`}>
-      <div className="text-sm">
-        <div>{label}</div>
-        {progress && (
-          <div className="mt-1 flex items-center gap-2 text-xs text-gray-600">
-            <span>Progress: {progress}</span>
-            <div className="h-1.5 w-28 rounded bg-gray-200 overflow-hidden">
-              <div className={`h-1.5 ${fillClass || "bg-black/60"}`} style={{ width: `${Math.min(100, Math.max(0, Math.round(pct || 0))) }%` }} />
-            </div>
+    <div
+      role="button"
+      tabIndex={canUse ? 0 : -1}
+      aria-disabled={!canUse}
+      onClick={handleClick}
+      onKeyDown={(e) => { if (canUse && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onUse(); } }}
+      className={[
+        "relative overflow-hidden rounded-xl border bg-white",
+        "transition-all select-none",
+        canUse ? "cursor-pointer hover:shadow-md active:scale-[0.99]" : "cursor-not-allowed opacity-75",
+        ready && canUse ? `ring-2 ring-offset-1 ring-offset-white ${ringClass || ""} wc-glow` : ""
+
+      ].join(" ")}
+    >
+      {/* FILL LAYER: whole tile fills with category color but keeps content readable */}
+      <div
+        className={`${fillClass || "bg-black/60"} absolute inset-y-0 left-0 opacity-70 transition-all duration-300`}
+        style={{ width: `${pctClamped}%` }}
+        aria-hidden
+      />
+      {/* Optional leading sheen */}
+      <div
+        className="absolute inset-y-0 left-0 w-4 bg-white/10 pointer-events-none"
+        style={{ transform: `translateX(${pctClamped}%)` }}
+        aria-hidden
+      />
+
+      {/* CONTENT */}
+      <div className="relative z-10 px-3 pt-2 pb-2">
+        {/* Top row: emoji + POWERUP NAME + available count */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {icon && <span className="text-lg" aria-hidden>{icon}</span>}
+            <span className="text-sm font-semibold truncate">{label}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm font-semibold tabular-nums">{available}</span>
+          </div>
+        </div>
+
+        {/* Subline: CATEGORY on left, counter on right */}
+        {(info || counter) && (
+          <div className="mt-1 flex items-center justify-between text-[11px] text-gray-800">
+            <span className="truncate">{info}</span>
+            {counter && <span className="ml-2 shrink-0 tabular-nums">{counter}</span>}
           </div>
         )}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-600">Charges: <b>{charges}</b></span>
-        <button className="btn btn-sm" disabled={charges <= 0} onClick={onUse}>Use</button>
       </div>
     </div>
   );
