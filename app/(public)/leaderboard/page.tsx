@@ -1,4 +1,3 @@
-// app/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -136,7 +135,11 @@ export default function LeaderboardPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="p-3 text-right font-semibold">{r.value}</td>
+                    <td className="p-3 text-right font-semibold">
+                      {metric === "highest_multiplier"
+                        ? `${Math.max(1, Math.round(Number(r.value) || 0))}×`
+                        : r.value}
+                    </td>
                   </tr>
                 ))}
             </tbody>

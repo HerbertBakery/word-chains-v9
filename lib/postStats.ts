@@ -1,4 +1,4 @@
-import { getClientUserId } from "./clientUserId";
+// lib/postStats.ts
 
 export type GameSummary = {
   totalWords?: number;
@@ -20,13 +20,26 @@ export type GameSummary = {
 };
 
 export async function postStats(summary: GameSummary, opts?: { userId?: string }) {
-  const userId = (opts?.userId ?? getClientUserId()).trim();
+  // ensure we never send a decimal multiplier
+  const highestMultiplier =
+    summary.highestMultiplier != null
+      ? Math.max(1, Math.round(Number(summary.highestMultiplier) || 0))
+      : undefined;
+
+  const payload = {
+    ...summary,
+    ...(highestMultiplier != null ? { highestMultiplier } : {}),
+    // `userId` in body is ignored by your API (auth cookie is used) — leaving this out on purpose
+  };
+
   try {
     await fetch("/api/stats/ingest", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ userId, ...summary }),
+      body: JSON.stringify(payload),
       keepalive: true,
     });
-  } catch {}
+  } catch {
+    /* ignore network errors so gameplay isn't blocked */
+  }
 }
