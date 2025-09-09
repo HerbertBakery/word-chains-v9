@@ -631,7 +631,15 @@ const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
       const delta = newBuckets - prevBuckets;
       if (delta > 0) {
         setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
-        setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label}`);
+
+        // CHANGE #1: Award +0.5 LINK per new charged bucket
+        setLinks((x) => {
+          const nx = Math.round((x + 0.5 * delta) * 2) / 2;
+          setStats((s) => ({ ...s, linksEarned: s.linksEarned + 0.5 * delta }));
+          return nx;
+        });
+
+        setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label} (+0.5 LINK)`);
         return { ...buckets, [key]: newBuckets };
       }
       return buckets;
@@ -881,14 +889,17 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
           if (m.kind === "enterChain" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
           if (m.kind === "reachMult") {
             const current = next[m.chain].multiplier;
-            if (current >= (m as any).target) nx[id] = (m as any).target;
+
+            // CHANGE #2 (part A): make reachMult progress interval-based
+            nx[id] = Math.min((m as any).target, current);
           }
           if (m.kind === "combo") nx[id] = inCat ? Math.min((m as any).target, cur + 1) : 0;
           if (m.kind === "scoreWord" && inCat && gained >= (m as any).target) nx[id] = (m as any).target;
           if (m.kind === "validWords" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
         } else {
           if (m.kind === "reachSame") {
-            if (sameMult >= (m as any).target) nx[id] = (m as any).target;
+            // CHANGE #2 (part B): main reachSame shows smooth progress to target
+            nx[id] = Math.min((m as any).target, sameMult);
           } else if (m.kind === "totalScore") {
             nx[id] = Math.min((m as any).target, cur + gained);
           } else if (m.kind === "sequence") {
