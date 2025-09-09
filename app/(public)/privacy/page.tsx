@@ -1,98 +1,226 @@
+import Link from "next/link";
+import Image from "next/image";
+
 export const metadata = {
   title: "Privacy Policy — Word Chains",
-  description: "How Word Chains collects, uses, and protects your data.",
 };
+
+function Section({
+  id,
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      id={id}
+      className="group rounded-2xl border bg-white/80 p-0 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70"
+      {...(defaultOpen ? { open: true } : {})}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-5 py-4 text-lg font-semibold [&::-webkit-details-marker]:hidden">
+        <span>{title}</span>
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5 shrink-0 transition-transform duration-200 group-open:rotate-180"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </summary>
+      <div className="px-5 pb-5 pt-0 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+        {children}
+      </div>
+    </details>
+  );
+}
 
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-3xl p-6 prose prose-sm sm:prose lg:prose-lg">
-      <h1>Privacy Policy — Word Chains</h1>
-      <p><strong>Effective date:</strong> September 8, 2025</p>
-      <p><strong>Contact:</strong> <a href="mailto:huxardedu@gmail.com">huxardedu@gmail.com</a></p>
+    <main className="min-h-[100dvh] bg-gradient-to-br from-amber-50 to-sky-50 py-10 dark:from-zinc-900 dark:to-slate-900">
+      <div className="mx-auto max-w-6xl px-4">
+        {/* Header */}
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/wordchains-logo.png"
+              alt="Word Chains logo"
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-xl shadow"
+              priority
+            />
+            <div>
+              <h1 className="text-3xl font-bold md:text-4xl">Privacy Policy</h1>
+              <p className="text-xs text-gray-500">Effective date: September 8, 2025</p>
+            </div>
+          </div>
+          <Link href="/" className="btn btn-ghost">← Home</Link>
+        </div>
 
-      <h2>Summary (TL;DR)</h2>
-      <ul>
-        <li>We use Google Sign-In to create your account.</li>
-        <li>Your chosen username is public on the leaderboard and your profile.</li>
-        <li>We store gameplay stats; we do not sell your data.</li>
-        <li>We use cookies/local storage for sessions and gameplay UX.</li>
-      </ul>
+        {/* Layout */}
+        <div className="grid gap-8 lg:grid-cols-4">
+          {/* Quick Menu */}
+          <aside className="lg:col-span-1">
+            <nav className="sticky top-6 rounded-2xl border bg-white/80 p-4 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Quick menu</p>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#overview" className="hover:underline">Overview</a></li>
+                <li><a href="#data-we-collect" className="hover:underline">Data We Collect</a></li>
+                <li><a href="#how-we-use" className="hover:underline">How We Use Data</a></li>
+                <li><a href="#cookies" className="hover:underline">Cookies & Local Storage</a></li>
+                <li><a href="#leaderboard" className="hover:underline">Leaderboard & Profiles</a></li>
+                <li><a href="#sharing" className="hover:underline">Sharing & Providers</a></li>
+                <li><a href="#transfers" className="hover:underline">International Transfers</a></li>
+                <li><a href="#retention" className="hover:underline">Retention & Deletion</a></li>
+                <li><a href="#your-rights" className="hover:underline">Your Rights</a></li>
+                <li><a href="#children" className="hover:underline">Children’s Privacy</a></li>
+                <li><a href="#security" className="hover:underline">Security</a></li>
+                <li><a href="#changes" className="hover:underline">Changes</a></li>
+                <li><a href="#contact" className="hover:underline">Contact</a></li>
+              </ul>
+            </nav>
+          </aside>
 
-      <h2>Who we are</h2>
-      <p><strong>Word Chains</strong> is an online word game operated in Nova Scotia, Canada.</p>
+          {/* Sections */}
+          <section className="space-y-4 lg:col-span-3">
+            <Section id="overview" title="Overview" defaultOpen>
+              <p>
+                Word Chains (“we”, “our”, “us”) is an online word game. This policy explains what we collect,
+                how we use it, and your choices. We keep it simple: we collect what’s needed to run the game,
+                show leaderboards, and improve reliability. We do not sell your data.
+              </p>
+            </Section>
 
-      <h2>Information we collect</h2>
-      <h3>You provide</h3>
-      <ul>
-        <li>Account data via Google Sign-In (name, email, Google user ID, profile image).</li>
-        <li>Public username you pick during onboarding.</li>
-      </ul>
-      <h3>Collected automatically</h3>
-      <ul>
-        <li>IP address, device/browser details, and basic logs (e.g., sign-ins, errors).</li>
-        <li>Cookies &amp; local storage (e.g., session cookies; local keys like <code>wc_uid</code> and performance stats).</li>
-      </ul>
-      <h3>Gameplay &amp; profile</h3>
-      <ul>
-        <li><strong>Public:</strong> username, rank/score stats, optional avatar image.</li>
-        <li><strong>Not public:</strong> your email address and internal IDs.</li>
-      </ul>
+            <Section id="data-we-collect" title="Data We Collect">
+              <ul className="list-disc space-y-2 pl-5">
+                <li>
+                  <b>Account data (via Google Sign-In):</b> Google user ID, name, email, and profile image.
+                </li>
+                <li>
+                  <b>Public username:</b> the handle you choose during onboarding (displayed on leaderboards/profile).
+                </li>
+                <li>
+                  <b>Gameplay stats:</b> totals, records (e.g., best score, longest chain, highest multiplier), category counts.
+                </li>
+                <li>
+                  <b>Technical logs:</b> IP address, device/browser info, error logs, and basic request metadata.
+                </li>
+                <li>
+                  <b>Cookies & local storage:</b> session cookies for sign-in; local keys for gameplay UX (e.g., cached stats).
+                </li>
+              </ul>
+            </Section>
 
-      <h2>How we use your information</h2>
-      <ul>
-        <li>Provide the service (auth, leaderboard, stats).</li>
-        <li>Improve and protect (security, anti-abuse, troubleshooting, performance).</li>
-        <li>Communicate necessary service messages.</li>
-      </ul>
+            <Section id="how-we-use" title="How We Use Data">
+              <ul className="list-disc space-y-2 pl-5">
+                <li>Authenticate users and manage accounts.</li>
+                <li>Store and display gameplay stats and leaderboards.</li>
+                <li>Improve performance, troubleshoot, and fight abuse/fraud.</li>
+                <li>Send essential service communications when necessary.</li>
+                <li>Comply with legal obligations when applicable.</li>
+              </ul>
+              <p className="mt-2 text-xs text-gray-500">
+                Legal bases (EEA/UK): performance of a contract, legitimate interests (security/quality), and consent where required.
+              </p>
+            </Section>
 
-      <h2>Legal bases (EEA/UK)</h2>
-      <ul>
-        <li>Performance of a contract (to provide the game).</li>
-        <li>Legitimate interests (security, improvement, fraud prevention).</li>
-        <li>Consent where required (e.g., optional analytics/cookies, if enabled).</li>
-      </ul>
+            <Section id="cookies" title="Cookies & Local Storage">
+              <ul className="list-disc space-y-2 pl-5">
+                <li>
+                  <b>Required cookies:</b> session/auth cookies (NextAuth) to keep you signed in.
+                </li>
+                <li>
+                  <b>Local storage:</b> items like <code>wc_stats</code>, <code>wc_peak_multipliers</code>, or a local
+                  device ID to enhance gameplay UX on your device. Clear your browser data to remove them.
+                </li>
+                <li>
+                  <b>Optional analytics:</b> If we add analytics or additional cookies in the future, we’ll update this page
+                  and request consent where required.
+                </li>
+              </ul>
+            </Section>
 
-      <h2>Sharing your information</h2>
-      <p>
-        We don’t sell personal information. We share limited data with service providers that help operate Word Chains:
-        hosting/build (e.g., Vercel), managed database (PostgreSQL), and authentication (Google Sign-In). These
-        providers process data under our instructions and safeguards. We may disclose information if required by law
-        or to protect rights, safety, and service integrity.
-      </p>
+            <Section id="leaderboard" title="Leaderboard & Profiles">
+              <ul className="list-disc space-y-2 pl-5">
+                <li><b>Public:</b> username, avatar image (if any), and game stats shown on leaderboards and your profile.</li>
+                <li><b>Not public:</b> your email address and internal identifiers.</li>
+                <li>We may remove suspicious entries to protect fairness and integrity.</li>
+              </ul>
+            </Section>
 
-      <h2>International transfers</h2>
-      <p>Data may be processed in other countries with appropriate safeguards for transfers.</p>
+            <Section id="sharing" title="Sharing & Providers">
+              <p>
+                We don’t sell personal data. We share limited data with service providers that help operate Word Chains:
+                hosting/build (e.g., Vercel), managed database (PostgreSQL), and authentication (Google Sign-In).
+                Providers process data under our instructions and safeguards. We may disclose data to comply with law
+                or to protect rights, safety, and service integrity.
+              </p>
+            </Section>
 
-      <h2>Data retention</h2>
-      <ul>
-        <li><strong>Account &amp; stats:</strong> retained while your account is active.</li>
-        <li><strong>Deletion:</strong> upon verified request, we delete or anonymize account-linked stats and profile data. Aggregated or de-identified data that no longer identifies you may be retained.</li>
-        <li><strong>Local storage:</strong> remains on your device until you clear your browser data.</li>
-      </ul>
+            <Section id="transfers" title="International Transfers">
+              <p>
+                Data may be processed in countries outside your own. Where required, appropriate safeguards are used
+                for cross-border transfers.
+              </p>
+            </Section>
 
-      <h2>Your choices &amp; rights</h2>
-      <ul>
-        <li>Access/Update; Delete; Object/Restrict (EEA/UK); Portability; CPRA rights (CA). We do not “sell” or “share” personal info as defined by CPRA.</li>
-      </ul>
-      <p>To exercise rights, email <a href="mailto:huxardedu@gmail.com">huxardedu@gmail.com</a> from the address tied to your account.</p>
+            <Section id="retention" title="Data Retention & Deletion">
+              <ul className="list-disc space-y-2 pl-5">
+                <li><b>Account & stats:</b> kept while your account is active.</li>
+                <li>
+                  <b>Deletion:</b> on verified request, we delete/anonymize account-linked stats and profile data.
+                  Aggregated or de-identified data may be retained.
+                </li>
+                <li><b>Local storage:</b> remains on your device until you clear it.</li>
+              </ul>
+            </Section>
 
-      <h2>Children’s privacy</h2>
-      <p>The service is not intended for children under the lawful age of online consent in their region. If a child provided data without appropriate consent, contact us for deletion.</p>
+            <Section id="your-rights" title="Your Rights & Choices">
+              <p className="mb-2">
+                Depending on your region, you may have rights to access, correct, delete, object/restrict processing,
+                or request portability. You can also withdraw consent where processing relies on consent.
+              </p>
+              <p>
+                To exercise rights, email <a className="underline" href="mailto:huxardedu@gmail.com">huxardedu@gmail.com</a> from the address linked to your account.
+              </p>
+            </Section>
 
-      <h2>Security</h2>
-      <p>We use reasonable technical and organizational measures to protect data. No service can guarantee perfect security.</p>
+            <Section id="children" title="Children’s Privacy">
+              <p>
+                The Service is not directed to children under the lawful age of online consent in their region.
+                If a child provided data without appropriate consent, contact us and we’ll delete it.
+              </p>
+            </Section>
 
-      <h2>Cookies and similar tech</h2>
-      <p>We use necessary cookies for sign-in and session continuity, and local storage for gameplay UX. If we add optional analytics or additional cookies, we will update this policy and, where required, request consent.</p>
+            <Section id="security" title="Security">
+              <p>
+                We use reasonable technical and organizational safeguards. No service can guarantee perfect security,
+                but we work to protect your data against unauthorized access and misuse.
+              </p>
+            </Section>
 
-      <h2>Third-party links</h2>
-      <p>External sites/services are governed by their own policies.</p>
+            <Section id="changes" title="Changes to This Policy">
+              <p>
+                We may update this policy. We’ll revise the effective date above and, for material changes,
+                may provide in-app notice.
+              </p>
+            </Section>
 
-      <h2>Changes</h2>
-      <p>We may update this policy and adjust the effective date above. Material changes may be communicated in-app.</p>
-
-      <h2>Contact</h2>
-      <p>Email: <a href="mailto:huxardedu@gmail.com">huxardedu@gmail.com</a></p>
+            <Section id="contact" title="Contact">
+              <p>
+                Questions or requests? Email <a className="underline" href="mailto:huxardedu@gmail.com">huxardedu@gmail.com</a>.
+              </p>
+            </Section>
+          </section>
+        </div>
+      </div>
     </main>
   );
 }
