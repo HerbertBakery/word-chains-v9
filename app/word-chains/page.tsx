@@ -490,30 +490,49 @@ const endGame = async (reason: string) => {
     | { id: string; owner: "main"; chain: "main"; kind: Exclude<MissionKindMain, "sequence">; target: number; progress: number; reward: number }
     | { id: string; owner: "main"; chain: "main"; kind: "sequence"; sequence: ChainKey[]; progress: number; reward: number };
 
-  // 6 missions per category; 6 for main
+  // 7 missions per category; 7 for main
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
-    const R = 0.5;
-    return [
-      { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
-      { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
-      { id: newId(), owner: chain, chain, kind: "reachMult",  target: 1.6, progress: 0, reward: R },
-      { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 40,  progress: 0, reward: R },
-      { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
-      { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
-    ];
-  };
-  const buildMainTrack = (): Mission[] => {
-    const R = 0.5;
-    const seq: ChainKey[] = ["animal", "country", "name"];
-    return [
-      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 1.5, progress: 0, reward: R },
-      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 120, progress: 0, reward: R },
-      { id: newId(), owner: "main", chain: "main", kind: "sequence",   sequence: seq, progress: 0, reward: R },
-      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 2.0, progress: 0, reward: R },
-      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 300, progress: 0, reward: R },
-      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 2.4, progress: 0, reward: R },
-    ];
-  };
+  const R = 0.5;
+  return [
+    // 1) Enter the category once
+    { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
+
+    // 2) Chain two in a row
+    { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
+
+    // 3) Reach category multiplier x2.00
+    { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
+
+    // 4) Score >= 500 with a word in this category
+    { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 500, progress: 0, reward: R },
+
+    // 5) Chain three in a row
+    { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
+
+    // 6) Reach category multiplier x4.00
+    { id: newId(), owner: chain, chain, kind: "reachMult",  target: 4.0, progress: 0, reward: R },
+
+    // 7) Score >= 2000 with a word in this category
+    { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 2000, progress: 0, reward: R },
+  ];
+};
+
+const buildMainTrack = (): Mission[] => {
+  const R = 0.5;
+
+  // NOTE: "small letter" in your message is interpreted as "same-letter".
+  // Targets are exactly as requested.
+  return [
+    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 250,  progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 1000, progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 1.5,  progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 3.0,  progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 5000, progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 5.0,  progress: 0, reward: R },
+    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 10000,progress: 0, reward: R },
+  ];
+};
+
 
   const missionTracks: Record<ChainKeyOrMain, Mission[]> = useMemo(() => ({
     main: buildMainTrack(),
@@ -922,7 +941,7 @@ const endGame = async (reason: string) => {
   }, [missionProgress, currentMissions]);
 
   /** ===================== UI helpers ===================== */
-  const totalLevels = 6; // per track
+  const totalLevels = 7; // per track
   const ownerProgressPct = (owner: ChainKeyOrMain) => {
     const idx = missionIndex[owner] ?? 0;
     const pct = Math.min(100, Math.round((idx / totalLevels) * 100));

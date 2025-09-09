@@ -1,4 +1,3 @@
-// app/stats/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -305,57 +304,56 @@ export default function StatsPage() {
   }, []);
 
   // Merge server + local so records don't show zero when server omits fields
-const stats: Stats | null = useMemo(() => {
-  const s = statsServer;
-  const l = statsLocal;
-  if (!s && !l) return null;
+  const stats: Stats | null = useMemo(() => {
+    const s = statsServer;
+    const l = statsLocal;
+    if (!s && !l) return null;
 
-  const max = (a?: number, b?: number) => Math.max(Number(a ?? 0), Number(b ?? 0));
+    const max = (a?: number, b?: number) => Math.max(Number(a ?? 0), Number(b ?? 0));
 
-  // Base satisfies required numeric fields so TS is happy
-  const base: Stats = {
-    totalWords: 0,
-    animals: 0,
-    countries: 0,
-    names: 0,
-    sameLetterWords: 0,
-    longestAnimalStreak: 0,
-    longestCountryStreak: 0,
-    longestNameStreak: 0,
-    highestWordScore: 0,
-    switches: 0,
-    linksEarned: 0,
-    linksSpent: 0,
-    // optional fields – safe defaults
-    bestScore: 0,
-    longestChain: 0,
-    highestMultiplier: 0,
-    totalSessions: 0,
-    uniqueWords: 0,
-    badges: 0,
-  };
+    // Base satisfies required numeric fields so TS is happy
+    const base: Stats = {
+      totalWords: 0,
+      animals: 0,
+      countries: 0,
+      names: 0,
+      sameLetterWords: 0,
+      longestAnimalStreak: 0,
+      longestCountryStreak: 0,
+      longestNameStreak: 0,
+      highestWordScore: 0,
+      switches: 0,
+      linksEarned: 0,
+      linksSpent: 0,
+      // optional fields – safe defaults
+      bestScore: 0,
+      longestChain: 0,
+      highestMultiplier: 0,
+      totalSessions: 0,
+      uniqueWords: 0,
+      badges: 0,
+    };
 
-  // Merge: local then server override the base
-  const merged: Stats = { ...base, ...(l ?? {}), ...(s ?? {}) };
+    // Merge: local then server override the base
+    const merged: Stats = { ...base, ...(l ?? {}), ...(s ?? {}) };
 
-  // Normalize records to max(server, local)
-  merged.highestWordScore     = max(s?.highestWordScore,     l?.highestWordScore);
-  merged.longestAnimalStreak  = max(s?.longestAnimalStreak,  l?.longestAnimalStreak);
-  merged.longestCountryStreak = max(s?.longestCountryStreak, l?.longestCountryStreak);
-  merged.longestNameStreak    = max(s?.longestNameStreak,    l?.longestNameStreak);
-  merged.longestChain         = max(s?.longestChain,         l?.longestChain);
+    // Normalize records to max(server, local)
+    merged.highestWordScore     = max(s?.highestWordScore,     l?.highestWordScore);
+    merged.longestAnimalStreak  = max(s?.longestAnimalStreak,  l?.longestAnimalStreak);
+    merged.longestCountryStreak = max(s?.longestCountryStreak, l?.longestCountryStreak);
+    merged.longestNameStreak    = max(s?.longestNameStreak,    l?.longestNameStreak);
+    merged.longestChain         = max(s?.longestChain,         l?.longestChain);
 
-  merged.totalWords           = max(s?.totalWords,           l?.totalWords);
-  merged.animals              = max(s?.animals,              l?.animals);
-  merged.countries            = max(s?.countries,            l?.countries);
-  merged.names                = max(s?.names,                l?.names);
-  merged.uniqueWords          = max(s?.uniqueWords,          l?.uniqueWords);
-  merged.linksEarned          = max(s?.linksEarned,          l?.linksEarned);
-  merged.linksSpent           = max(s?.linksSpent,           l?.linksSpent);
+    merged.totalWords           = max(s?.totalWords,           l?.totalWords);
+    merged.animals              = max(s?.animals,              l?.animals);
+    merged.countries            = max(s?.countries,            l?.countries);
+    merged.names                = max(s?.names,                l?.names);
+    merged.uniqueWords          = max(s?.uniqueWords,          l?.uniqueWords);
+    merged.linksEarned          = max(s?.linksEarned,          l?.linksEarned);
+    merged.linksSpent           = max(s?.linksSpent,           l?.linksSpent);
 
-  return merged;
-}, [statsServer, statsLocal]);
-
+    return merged;
+  }, [statsServer, statsLocal]);
 
   // Fallback helpers
   const bestHighestMultiplier = useMemo(() => {
@@ -363,6 +361,12 @@ const stats: Stats | null = useMemo(() => {
     const fromLocal = peakMultipliers.length ? Math.max(...peakMultipliers) : 0;
     return Math.max(fromStats || 0, fromLocal || 0);
   }, [stats, peakMultipliers]);
+
+  // 🔢 NEW: rounded version for display & badges
+  const bestHighestMultiplierRounded = useMemo(
+    () => Math.max(1, Math.round(Number(bestHighestMultiplier || 0))),
+    [bestHighestMultiplier]
+  );
 
   // REPLACE the old sessionsPlayed useMemo with this:
   const sessionsPlayed = useMemo(() => {
@@ -424,11 +428,12 @@ const stats: Stats | null = useMemo(() => {
       { label: "Name Share", value: nameShare },
       { label: "Sessions Played", value: sessionsPlayed ?? "—" },
       { label: "Best Score", value: stats.bestScore ?? "—" },
-      { label: "Highest Multiplier", value: bestHighestMultiplier || "—" },
+      // 🔢 use rounded multiplier in KPIs
+      { label: "Highest Multiplier", value: bestHighestMultiplierRounded || "—" },
       { label: "Longest Chain (any)", value: stats.longestChain ?? "—" },
       { label: "Word Speed Average", value: fmtMsPerWord(wordSpeedAverageMs) },
     ];
-  }, [stats, sessionsPlayed, bestHighestMultiplier, wordSpeedAverageMs]);
+  }, [stats, sessionsPlayed, bestHighestMultiplierRounded, wordSpeedAverageMs]);
 
   const records = useMemo(() => {
     if (!stats) return [] as { label: string; value: React.ReactNode }[];
@@ -438,9 +443,10 @@ const stats: Stats | null = useMemo(() => {
       { label: "Longest Country streak", value: stats.longestCountryStreak ?? 0 },
       { label: "Longest Name streak", value: stats.longestNameStreak ?? 0 },
       { label: "Longest Chain (any)", value: stats.longestChain ?? "—" },
-      { label: "Highest Multiplier", value: bestHighestMultiplier || "—" },
+      // 🔢 use rounded multiplier in Records
+      { label: "Highest Multiplier", value: bestHighestMultiplierRounded || "—" },
     ];
-  }, [stats, bestHighestMultiplier]);
+  }, [stats, bestHighestMultiplierRounded]);
 
   type ComputedBadge = {
     id: string;
@@ -451,9 +457,10 @@ const stats: Stats | null = useMemo(() => {
   };
   const computedBadges: ComputedBadge[] = useMemo(() => {
     if (!stats) return [];
+    // 🔢 feed rounded multiplier into badges so tiers check whole numbers
     const mergedForBadges: Stats = {
       ...stats,
-      highestMultiplier: bestHighestMultiplier || stats.highestMultiplier,
+      highestMultiplier: bestHighestMultiplierRounded || stats.highestMultiplier,
     };
     return BADGES.map((b) => {
       let achievedTierIndex = -1;
@@ -464,7 +471,7 @@ const stats: Stats | null = useMemo(() => {
       });
       return { id: b.id, name: b.name, description: b.description, achievedTierIndex, tiers };
     });
-  }, [stats, totals, bestHighestMultiplier]);
+  }, [stats, totals, bestHighestMultiplierRounded]);
 
   const unlockedBadgeCount = useMemo(
     () => computedBadges.reduce((acc, b) => acc + Math.max(0, b.achievedTierIndex + 1), 0),
