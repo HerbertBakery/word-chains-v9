@@ -1585,9 +1585,10 @@ function thawBurstAt(
   (target.style as CSSStyleDeclaration).position ||= "relative";
   target.appendChild(canvas);
 
-  const ctx = canvas.getContext("2d");
-  if (!ctx) { canvas.remove(); return; }
-  ctx.scale(dpr, dpr);
+  const ctx2d = canvas.getContext("2d");
+  if (!ctx2d) { canvas.remove(); return; }
+  const C = ctx2d as CanvasRenderingContext2D; // non-null binding
+  C.scale(dpr, dpr);
 
   const N = Math.max(14, Math.min(48, (opts?.shards ?? 26)));
   const dur = Math.max(300, Math.min(1200, opts?.durationMs ?? 650));
@@ -1617,9 +1618,9 @@ function thawBurstAt(
     const t = (now - t0) / dur; // 0..1
     if (t >= 1) { canvas.remove(); return; }
 
-    ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
+    C.clearRect(0, 0, w, h);
+    C.save();
+    C.globalCompositeOperation = "lighter";
 
     for (const s of shards) {
       // integrate
@@ -1630,28 +1631,29 @@ function thawBurstAt(
       // fade
       s.a = Math.max(0, 1 - t);
 
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      ctx.rotate(s.rot);
-      ctx.beginPath();
+      C.save();
+      C.translate(s.x, s.y);
+      C.rotate(s.rot);
+      C.beginPath();
       // skinny triangle shard
-      ctx.moveTo(0, 0);
-      ctx.lineTo(s.r * 0.6, -s.r * 3);
-      ctx.lineTo(-s.r * 0.6, -s.r * 2.6);
-      ctx.closePath();
-      ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${0.65 * s.a})`;
-      ctx.strokeStyle = `hsla(${s.hue}, 95%, 85%, ${0.8 * s.a})`;
-      ctx.lineWidth = 0.8;
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
+      C.moveTo(0, 0);
+      C.lineTo(s.r * 0.6, -s.r * 3);
+      C.lineTo(-s.r * 0.6, -s.r * 2.6);
+      C.closePath();
+      C.fillStyle = `hsla(${s.hue}, 90%, 70%, ${0.65 * s.a})`;
+      C.strokeStyle = `hsla(${s.hue}, 95%, 85%, ${0.8 * s.a})`;
+      C.lineWidth = 0.8;
+      C.fill();
+      C.stroke();
+      C.restore();
     }
 
-    ctx.restore();
+    C.restore();
     requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
+
 
 /** ===== ChainRow: one line per category with frozen overlay & thaw burst ===== */
 function ChainRow({
