@@ -14,7 +14,9 @@ type VfxAPI = {
 
 const VfxCtx = createContext<VfxAPI | null>(null);
 
+/** Inject once (runtime CSS for the effects) */
 function ensureStylesInjected() {
+  if (typeof document === "undefined") return;
   if (document.getElementById("wc-vfx-styles")) return;
   const style = document.createElement("style");
   style.id = "wc-vfx-styles";
@@ -57,6 +59,7 @@ function ensureStylesInjected() {
   document.head.appendChild(style);
 }
 
+/** Helpers */
 function centerOf(el: Element): Point {
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -65,6 +68,11 @@ function centerOf(el: Element): Point {
 function toElement(t: Element | string): Element | null {
   if (typeof t === "string") return document.querySelector(t);
   return t ?? null;
+}
+
+/** Safe setter for CSS variables on generic Elements */
+function setCssVar(node: Element, name: string, value: string) {
+  (node as unknown as { style?: CSSStyleDeclaration }).style?.setProperty(name, value);
 }
 
 export function VfxProvider({ children }: { children: React.ReactNode }) {
@@ -89,11 +97,11 @@ export function VfxProvider({ children }: { children: React.ReactNode }) {
         const dist = 80 + Math.random() * 60 * power;
         const dx = Math.cos(angle) * dist;
         const dy = Math.sin(angle) * dist + 30;
-        n.style.left = `${cx}px`;
-        n.style.top = `${cy}px`;
-        n.style.setProperty("--dx", `${dx}px`);
-        n.style.setProperty("--dy", `${dy}px`);
-        n.style.setProperty("--t", `${600 + Math.random() * 400}ms`);
+        (n as any).style.left = `${cx}px`;
+        (n as any).style.top = `${cy}px`;
+        setCssVar(n, "--dx", `${dx}px`);
+        setCssVar(n, "--dy", `${dy}px`);
+        setCssVar(n, "--t", `${600 + Math.random() * 400}ms`);
         document.body.appendChild(n);
         setTimeout(() => n.remove(), 1200);
       }
@@ -102,8 +110,8 @@ export function VfxProvider({ children }: { children: React.ReactNode }) {
     ringBurstAt(x, y) {
       const n = document.createElement("div");
       n.className = "wc-ring";
-      n.style.left = `${x}px`;
-      n.style.top = `${y}px`;
+      (n as any).style.left = `${x}px`;
+      (n as any).style.top = `${y}px`;
       document.body.appendChild(n);
       setTimeout(() => n.remove(), 600);
     },
@@ -119,7 +127,7 @@ export function VfxProvider({ children }: { children: React.ReactNode }) {
       const el = toElement(target);
       if (!el) return;
       el.classList.add("wc-shake");
-      el.style.setProperty("--dur", `${ms}ms`);
+      setCssVar(el, "--dur", `${ms}ms`);
       const clear = () => {
         el.classList.remove("wc-shake");
         el.removeEventListener("animationend", clear);
@@ -136,24 +144,20 @@ export function VfxProvider({ children }: { children: React.ReactNode }) {
         el.classList.add("__go");
         setTimeout(() => {
           el.classList.remove("__go");
-          // keep base class (harmless), or remove both:
+          // keeping base class is harmless; remove if you prefer:
           // el.classList.remove("wc-glow-once");
         }, 250);
       });
     },
   };
 
-  return (
-    <VfxCtx.Provider value={api}>
-      {children}
-    </VfxCtx.Provider>
-  );
+  return <VfxCtx.Provider value={api}>{children}</VfxCtx.Provider>;
 }
 
 export function useVFX(): VfxAPI {
   const ctx = useContext(VfxCtx);
   if (!ctx) {
-    // Safe no-op fallback so app doesn't crash if provider isn't mounted
+    // No-op fallbacks so the app keeps working if provider isn't mounted
     return {
       confettiBurst: () => {},
       ringBurstAt: () => {},
