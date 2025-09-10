@@ -1559,161 +1559,100 @@ export default function WordChains() {
   );
 } // ← END WordChains component
 
-/** ===== ThawBurst: brief “ice shatter” particles when unfreezing ===== */
-function ThawBurst() {
-  React.useEffect(() => {
-    // Mount a temporary canvas inside the nearest relative container (our ChainRow)
-    const host = document.createElement("div");
-    host.style.position = "absolute";
-    host.style.inset = "0";
-    host.style.pointerEvents = "none";
-    host.style.overflow = "hidden";
-    host.style.borderRadius = "0.75rem";
+/** ===== Tiny canvas burst for thaw/unfreeze moments (TS-safe) ===== */
+function thawBurstAt(
+  target?: HTMLElement | null,
+  opts?: { shards?: number; durationMs?: number }
+) {
+  if (!target) return;
 
-    const canvas = document.createElement("canvas");
-    canvas.style.position = "absolute";
-    canvas.style.inset = "0";
-    canvas.width = host.clientWidth || 600; // fallback; will be resized below
-    canvas.height = host.clientHeight || 56;
-    host.appendChild(canvas);
+  const rect = target.getBoundingClientRect();
+  const canvas = document.createElement("canvas");
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.style.position = "absolute";
+  canvas.style.left = "0";
+  canvas.style.top = "0";
+  canvas.style.pointerEvents = "none";
+  canvas.style.zIndex = "2"; // above frost layers
 
-    // Attach to the most recent ChainRow (this component is rendered inside it)
-    // We climb to parentNode which is our ChainRow wrapper.
-    const parent = (document.currentScript as any)?.parentElement // not in React; always undefined
-      || (document.querySelector("#missions-panel") ? null : null); // noop line keeps TS happy in some setups
-    // In React, we append to the element that is rendering this component:
-    // ThawBurst is a sibling overlay, so use the last element with our active glow in document flow.
-    // Simpler and reliable: append to the body, positioned by the parent’s bounding box.
-    const container = host;
-    let mountedTo: HTMLElement | null = null;
+  // mount canvas inside the row container
+  (target.style as CSSStyleDeclaration).position ||= "relative";
+  target.appendChild(canvas);
 
-    // Position the host over our nearest relatively-positioned ancestor (the ChainRow)
-    // We assume the ChainRow div has `position: relative` (it does).
-    const chainRow = ((): HTMLElement | null => {
-      // Walk up from a temporary marker inserted where ThawBurst is rendered.
-      const marker = document.createElement("span");
-      marker.setAttribute("data-thaw-marker", "1");
-      marker.style.display = "none";
-      // React renders into the same parent; append marker, then remove it after we find the container.
-      document.body.appendChild(marker);
-      // Find the last .wc-active-glow OR a ChainRow by border classes; fallback to last focused element’s parent.
-      const candidates = Array.from(document.querySelectorAll(".wc-active-glow")).slice(-1) as HTMLElement[];
-      marker.remove();
-      return (candidates[0]?.closest("div") as HTMLElement) || null;
-    })();
+  const ctx = canvas.getContext("2d");
+  if (!ctx) { canvas.remove(); return; }
+  ctx.scale(dpr, dpr);
 
-    // If we can't reliably find the ChainRow (edge case), just mount to body and use absolute via viewport.
-    if (chainRow) {
-      chainRow.appendChild(container);
-      mountedTo = chainRow;
-      // Size canvas to row bounds
-      const r = chainRow.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(r.width));
-      canvas.height = Math.max(1, Math.floor(r.height));
-      canvas.style.width = `${r.width}px`;
-      canvas.style.height = `${r.height}px`;
-    } else {
-      document.body.appendChild(container);
-      mountedTo = document.body;
-      const vw = Math.max(320, Math.floor(window.innerWidth * 0.5));
-      const vh = 60;
-      canvas.width = vw;
-      canvas.height = vh;
-      const top = 80;
-      container.style.position = "fixed";
-      container.style.left = `${(window.innerWidth - vw) / 2}px`;
-      container.style.top = `${top}px`;
-      container.style.width = `${vw}px`;
-      container.style.height = `${vh}px`;
-    }
+  const N = Math.max(14, Math.min(48, (opts?.shards ?? 26)));
+  const dur = Math.max(300, Math.min(1200, opts?.durationMs ?? 650));
+  const t0 = performance.now();
 
-    // Get 2D context safely
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      container.remove();
-      return;
-    }
-    // From here, ctx is non-null in this closure
-    const C = ctx as CanvasRenderingContext2D;
-
-    // Create shards
-    const W = canvas.width;
-    const H = canvas.height;
-    const count = Math.max(24, Math.min(64, Math.floor((W * H) / 9000)));
-    const shards = Array.from({ length: count }).map(() => {
-      const x = Math.random() * W;
-      const y = Math.random() * H;
-      const a = Math.random() * Math.PI * 2;
-      const s = 2 + Math.random() * 6;
-      const dx = Math.cos(a) * (2 + Math.random() * 3);
-      const dy = Math.sin(a) * (1 + Math.random() * 2);
-      const life = 400 + Math.random() * 250;
-      return { x, y, a, s, dx, dy, life, t: 0 };
+  type Shard = {
+    x: number; y: number; vx: number; vy: number;
+    rot: number; vrot: number; r: number; a: number; hue: number;
+  };
+  const shards: Shard[] = [];
+  for (let i = 0; i < N; i++) {
+    const a = (Math.PI * 2 * i) / N + (Math.random() * 0.7 - 0.35);
+    const speed = 160 + Math.random() * 220;
+    shards.push({
+      x: w * 0.5, y: h * 0.5,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed - 40 * Math.random(),
+      rot: Math.random() * Math.PI,
+      vrot: (Math.random() - 0.5) * 6,
+      r: 2 + Math.random() * 10,
+      a: 1,
+      hue: 205 + Math.random() * 20,
     });
+  }
 
-    let start = performance.now();
-    let raf = 0;
+  function step(now: number) {
+    const t = (now - t0) / dur; // 0..1
+    if (t >= 1) { canvas.remove(); return; }
 
-    function tick(now: number) {
-      const elapsed = now - start;
-      const t = elapsed / 600; // 0..1
-      if (t >= 1) {
-        container.remove();
-        return;
-      }
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
 
-      // clear
-      C.clearRect(0, 0, W, H);
+    for (const s of shards) {
+      // integrate
+      s.x += s.vx * (1 / 60);
+      s.y += s.vy * (1 / 60);
+      s.vy += 240 * (1 / 60); // gravity-ish
+      s.rot += s.vrot * (1 / 60);
+      // fade
+      s.a = Math.max(0, 1 - t);
 
-      // additive for a bright shatter look
-      C.save();
-      C.globalCompositeOperation = "lighter";
-
-      for (const p of shards) {
-        p.t += 16;
-        const k = Math.min(1, p.t / p.life);
-        const alpha = (1 - k) * 0.85;
-        const len = p.s * (1 - k * 0.6);
-
-        p.x += p.dx * (0.9 + 0.2 * Math.random());
-        p.y += p.dy * (0.9 + 0.2 * Math.random());
-
-        C.strokeStyle = `rgba(162, 212, 255, ${alpha.toFixed(3)})`;
-        C.lineWidth = 1 + (1 - k) * 0.8;
-
-        C.beginPath();
-        C.moveTo(p.x, p.y);
-        C.lineTo(p.x + Math.cos(p.a) * len, p.y + Math.sin(p.a) * len);
-        C.stroke();
-
-        // tiny sparkle dots
-        if (Math.random() < 0.12) {
-          C.fillStyle = `rgba(255,255,255,${(0.25 + 0.5 * (1 - k)).toFixed(3)})`;
-          C.beginPath();
-          C.arc(p.x, p.y, 0.9 + Math.random() * 1.3, 0, Math.PI * 2);
-          C.fill();
-        }
-      }
-
-      C.restore();
-      raf = requestAnimationFrame(tick);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.beginPath();
+      // skinny triangle shard
+      ctx.moveTo(0, 0);
+      ctx.lineTo(s.r * 0.6, -s.r * 3);
+      ctx.lineTo(-s.r * 0.6, -s.r * 2.6);
+      ctx.closePath();
+      ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${0.65 * s.a})`;
+      ctx.strokeStyle = `hsla(${s.hue}, 95%, 85%, ${0.8 * s.a})`;
+      ctx.lineWidth = 0.8;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
 
-    raf = requestAnimationFrame(tick);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      container.remove();
-    };
-  }, []);
-
-  // Render nothing; this is a purely imperative, short-lived overlay
-  return null;
+    ctx.restore();
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
-
-
-/** ===== ChainRow: line per category with strong frozen VFX + thaw burst ===== */
 /** ===== ChainRow: one line per category with frozen overlay & thaw burst ===== */
 function ChainRow({
   k,
@@ -1775,7 +1714,6 @@ function ChainRow({
   );
 }
 
-
 /** ===== FrozenOverlay: bold icy growth + rim + cracks + sparkles ===== */
 function FrozenOverlay() {
   return (
@@ -1797,9 +1735,6 @@ function FrozenOverlay() {
     </div>
   );
 }
-
-
-
 
 /** Small helper component for powerup rows (tile itself fills; click to use) */
 function PowerRow({
