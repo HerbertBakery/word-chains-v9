@@ -1,56 +1,82 @@
-// app/components/SfxUnlock.tsx
 "use client";
-
 import { useEffect } from "react";
 
+/**
+ * SfxUnlock
+ * - Safely initializes a shared AudioContext on first user interaction
+ * - Plays a tiny inaudible blip to "unlock" audio on iOS/Safari
+ * - No UI; just mount this somewhere once (e.g., _app or layout)
+ */
 export default function SfxUnlock() {
   useEffect(() => {
+    // Guard SSR and unsupported environments
     if (typeof window === "undefined") return;
 
-    let unlocked = false;
-    let ctx: AudioContext | null = null;
+    // If we've already unlocked, skip
+    if ((window as any).__sfx_unlocked) return;
 
-    const unlock = () => {
-      if (unlocked) return;
-      unlocked = true;
-
-      // mark global so play() can bail fast until unlocked
-      (window as any).__sfx_unlocked = true;
-
+    // Create (or reuse) a shared AudioContext
+    const getCtx = (): AudioContext | null => {
       try {
-        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-        if (AC && !ctx) {
-          ctx = new AC();
-          // don't await; avoid blocking UI thread
-          ctx.resume().catch(() => {});
-          // tiny 10ms inaudible blip
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          gain.gain.value = 0.0001;
-          osc.connect(gain).connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.01);
-        }
-      } catch {}
+        const AC =
+          (window as any).AudioContext ||
+          (window as any).webkitAudioContext;
+        if (!AC) return null;
 
-      // nudge HTMLAudio silently (non-blocking)
-      try {
-        const a = new Audio("/sfx/accept.mp3");
-        a.volume = 0.01;
-        a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
-      } catch {}
+        // Reuse one context across the app
+        const existing = (window as any).__wc_audio_ctx as AudioContext | undefined;
+        if (existing) return existing;
 
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("touchstart", unlock);
+        const created: AudioContext = new AC();
+        (window as any).__wc_audio_ctx = created;
+        return created;
+      } catch {
+        return null;
+      }
     };
 
-    // only pointer/touch so we never touch keyboard events
-    window.addEventListener("pointerdown", unlock, { once: true, passive: true });
-    window.addEventListener("touchstart", unlock, { once: true, passive: true });
+    const unlockOnce = () => {
+      const ctx = getCtx();
+      if (!ctx) return; // Hard bail if no WebAudio
+
+      // Resume without blocking UI
+      ctx.resume().catch(() => {});
+
+      // 10ms blip at near-zero gain to satisfy iOS user-gesture requirement
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      try {
+        osc.start();
+        setTimeout(() => {
+          try { osc.stop(); } catch {}
+          try { osc.disconnect(); } catch {}
+          try { gain.disconnect(); } catch {}
+        }, 10);
+      } catch {
+        // ignore
+      }
+
+      (window as any).__sfx_unlocked = true;
+      // Remove listeners after success
+      window.removeEventListener("pointerdown", unlockOnce);
+      window.removeEventListener("keydown", unlockOnce);
+      window.removeEventListener("touchstart", unlockOnce);
+    };
+
+    // Try to unlock on first interaction
+    window.addEventListener("pointerdown", unlockOnce, { once: true });
+    window.addEventListener("keydown", unlockOnce, { once: true });
+    window.addEventListener("touchstart", unlockOnce, { once: true });
 
     return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("touchstart", unlock);
+      window.removeEventListener("pointerdown", unlockOnce);
+      window.removeEventListener("keydown", unlockOnce);
+      window.removeEventListener("touchstart", unlockOnce);
     };
   }, []);
 
