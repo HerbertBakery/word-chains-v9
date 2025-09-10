@@ -3,6 +3,8 @@ import "./globals.css";
 import PageShell from "./components/PageShell";
 import Header from "./components/header";
 import Providers from "./providers"; // ← delete this line & wrapper if not using NextAuth
+import { VfxProvider } from "./hooks/useVFX";
+import SfxUnlock from "./components/SfxUnlock"; // ← add this
 
 export const metadata = {
   title: "Word Chains",
@@ -14,10 +16,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <Providers>
-          <PageShell>
-            <Header />
-            {children}
-          </PageShell>
+          <SfxUnlock /> {/* ← unlocks Safari/iOS audio on first user gesture */}
+          <VfxProvider>
+            <PageShell>
+              <Header />
+              {children}
+            </PageShell>
+          </VfxProvider>
         </Providers>
       </body>
     </html>

@@ -1,6 +1,10 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+/* ===== SFX + VFX hooks (non-breaking) ===== */
+import { useSound } from "@/app/hooks/useSound";
+import { useVFX } from "@/app/hooks/useVFX";
+
 /** ===================== Types & constants ===================== */
 type ChainKey = "name" | "animal" | "country" | "food" | "brand" | "screen";
 type ChainKeyOrMain = ChainKey | "main";
@@ -100,6 +104,27 @@ async function postRunToLeaderboard(summary: {
 
 /** ===================== Component ===================== */
 export default function WordChains() {
+  /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
+  const { play } = useSound();
+  const vfx = useVFX();
+  const inputDomRef = useRef<HTMLInputElement>(null);
+  const lowWarnTickRef = useRef<number | null>(null); // to avoid spamming warning sfx
+
+  // ---- SAFARI-SAFE, NON-BLOCKING SOUND WRAPPER (surgical) ----
+  const safePlay = useCallback(
+    (key: string, opts?: any) => {
+      // If Safari/iOS hasn't unlocked audio yet, skip typing sfx to avoid first-key freeze
+      if (key === "typing" && typeof window !== "undefined" && !(window as any).__sfx_unlocked) return;
+      try {
+        // Defer to next frame so we never block key events
+        requestAnimationFrame(() => {
+          try { play(key as any, opts); } catch {}
+        });
+      } catch {}
+    },
+    [play]
+  );
+
   /** ===================== Data sets ===================== */
   const [dict, setDict] = useState<Set<string> | null>(null);
   const [animals, setAnimals] = useState<Set<string>>(new Set());
@@ -243,32 +268,31 @@ export default function WordChains() {
   });
 
   /** ===================== Multiplier (with completion x10 bonuses) ===================== */
- /** ===================== Multiplier (ADD +10 per completed section) ===================== */
-const [completedTracks, setCompletedTracks] = useState<Set<ChainKeyOrMain>>(new Set());
+  /** ===================== Multiplier (ADD +10 per completed section) ===================== */
+  const [completedTracks, setCompletedTracks] = useState<Set<ChainKeyOrMain>>(new Set());
 
-const totalMultData = useMemo(() => {
-  // Sum of category multipliers (each starts at x1)
-  const catSum =
-    chains.name.multiplier +
-    chains.animal.multiplier +
-    chains.country.multiplier +
-    chains.food.multiplier +
-    chains.brand.multiplier +
-    chains.screen.multiplier;
+  const totalMultData = useMemo(() => {
+    // Sum of category multipliers (each starts at x1)
+    const catSum =
+      chains.name.multiplier +
+      chains.animal.multiplier +
+      chains.country.multiplier +
+      chains.food.multiplier +
+      chains.brand.multiplier +
+      chains.screen.multiplier;
 
-  // NEW: additive mission bonus → +10 per completed section (stacks)
-  const tracksCompleted = completedTracks.size;
-  const missionAdd = 10 * tracksCompleted;
+    // NEW: additive mission bonus → +10 per completed section (stacks)
+    const tracksCompleted = completedTracks.size;
+    const missionAdd = 10 * tracksCompleted;
 
-  // Base + missions, then apply same-letter multiplier multiplicatively
-  const basePlusMissions = Math.max(1, catSum) + missionAdd;
-  const total = basePlusMissions * sameMult;
+    // Base + missions, then apply same-letter multiplier multiplicatively
+    const basePlusMissions = Math.max(1, catSum) + missionAdd;
+    const total = basePlusMissions * sameMult;
 
-  return { total, catSum, missionAdd, basePlusMissions, tracksCompleted };
-}, [chains, sameMult, completedTracks]);
+    return { total, catSum, missionAdd, basePlusMissions, tracksCompleted };
+  }, [chains, sameMult, completedTracks]);
 
-const totalMult = totalMultData.total;
-
+  const totalMult = totalMultData.total;
 
   /** ===================== Run analytics for stats page KPIs ===================== */
   const lastAcceptAtRef = useRef<number | null>(null); // last accepted word time
@@ -324,6 +348,18 @@ const totalMult = totalMultData.total;
 
   useEffect(() => { if (started && timeLeft <= 0) loseLife("Time's up!"); }, [timeLeft, started]);
 
+  /* ===== Low-timer warning SFX (<=5s, one ping per second) ===== */
+  useEffect(() => {
+    if (!started || paused) return;
+    if (timeLeft > 0 && timeLeft <= 5) {
+      if (lowWarnTickRef.current !== timeLeft) {
+        safePlay("warning", { volume: 0.5 });
+        lowWarnTickRef.current = timeLeft;
+      }
+    }
+    if (timeLeft > 5) lowWarnTickRef.current = null;
+  }, [timeLeft, started, paused, safePlay]);
+
   const loseLife = (why: string) => {
     // breaking the chain on a mistake/timeout
     currentChainRef.current = 0;
@@ -338,7 +374,7 @@ const totalMult = totalMultData.total;
 
   // Additive multiplier bonuses
   const [nextWordAddBonus, setNextWordAddBonus] = useState(0); // e.g., +50x or +10x next word
-  const [surgeActive, setSurgeActive] = useState(false);       // +20x until multiplier lost
+  const [surgeActive, setSurgeActive] = useState(false);       // +20x until multiplier is lost
 
   // Freeze-until-next-answer (Names)
   const [pauseUntilAnswer, setPauseUntilAnswer] = useState(false);
@@ -351,108 +387,110 @@ const totalMult = totalMultData.total;
     if (eff > peakTotalMultRef.current) peakTotalMultRef.current = eff;
   }, [totalMult, surgeActive, nextWordAddBonus]);
 
-// REPLACE your existing endGame with this:
-const endGame = async (reason: string) => {
-  setStarted(false);
-  setMsg(`Game over: ${reason}`);
-  setFinalScore(score);
+  // REPLACE your existing endGame with this:
+  const endGame = async (reason: string) => {
+    setStarted(false);
+    setMsg(`Game over: ${reason}`);
+    setFinalScore(score);
 
-  // Compute per-run avg speed (ms/word)
-  const gaps = deltasRef.current;
-  const perRunAvgMs = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+    // sfx
+    try { safePlay("gameover"); } catch {}
 
-  // ----- Local analytics stores (used by stats page) -----
-  try {
-    // 1) per-run speed list
-    const speeds = JSON.parse(localStorage.getItem("wc_session_speeds") || "[]");
-    const speedsArr = Array.isArray(speeds) ? speeds : [];
-    if (perRunAvgMs != null && isFinite(perRunAvgMs) && perRunAvgMs > 0) {
-      speedsArr.push(perRunAvgMs);
+    // Compute per-run avg speed (ms/word)
+    const gaps = deltasRef.current;
+    const perRunAvgMs = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+
+    // ----- Local analytics stores (used by stats page) -----
+    try {
+      // 1) per-run speed list
+      const speeds = JSON.parse(localStorage.getItem("wc_session_speeds") || "[]");
+      const speedsArr = Array.isArray(speeds) ? speeds : [];
+      if (perRunAvgMs != null && isFinite(perRunAvgMs) && perRunAvgMs > 0) {
+        speedsArr.push(perRunAvgMs);
+      }
+      localStorage.setItem("wc_session_speeds", JSON.stringify(speedsArr));
+
+      // 2) session counter
+      const prevSessions = Number(localStorage.getItem("wc_total_sessions") || "0") || 0;
+      localStorage.setItem("wc_total_sessions", String(prevSessions + 1));
+
+      // 3) peak effective multiplier for this run (already tracking effects)
+      const peaks = JSON.parse(localStorage.getItem("wc_peak_multipliers") || "[]");
+      const peaksArr = Array.isArray(peaks) ? peaks : [];
+      const peakThisRun = Number(peakTotalMultRef.current) || 1;
+      peaksArr.push(peakThisRun);
+      localStorage.setItem("wc_peak_multipliers", JSON.stringify(peaksArr));
+    } catch { /* ignore */ }
+
+    // Derive run-level fallbacks
+    const uniqueWordsThisRun = used.size;
+    const longestChainThisRun = maxChainRef.current || 0;
+    const highestMultThisRun = Number((peakTotalMultRef.current || 1).toFixed(2));
+
+    // ----- Merge with previous local all-time to preserve "records" -----
+    let prevLocal: any = {};
+    try { prevLocal = JSON.parse(localStorage.getItem("wc_stats") || "{}") || {}; } catch {}
+
+    const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+    const sessionsNow = num(localStorage.getItem("wc_total_sessions")); // already incremented above
+
+    const mergedAllTime = {
+      // keep any extra fields that may exist
+      ...prevLocal,
+
+      // -------- accumulators (add) --------
+      totalWords:        num(prevLocal.totalWords)        + num(stats.totalWords),
+      animals:           num(prevLocal.animals)           + num(stats.animals),
+      countries:         num(prevLocal.countries)         + num(stats.countries),
+      names:             num(prevLocal.names)             + num(stats.names),
+      sameLetterWords:   num(prevLocal.sameLetterWords)   + num(stats.sameLetterWords),
+      switches:          num(prevLocal.switches)          + num(stats.switches),
+      linksEarned:       num(prevLocal.linksEarned)       + num(stats.linksEarned),
+      linksSpent:        num(prevLocal.linksSpent)        + num(stats.linksSpent),
+
+      // -------- records (max) --------
+      highestWordScore:    Math.max(num(prevLocal.highestWordScore),    num(stats.highestWordScore)),
+      longestAnimalStreak: Math.max(num(prevLocal.longestAnimalStreak), num(stats.longestAnimalStreak)),
+      longestCountryStreak:Math.max(num(prevLocal.longestCountryStreak),num(stats.longestCountryStreak)),
+      longestNameStreak:   Math.max(num(prevLocal.longestNameStreak),   num(stats.longestNameStreak)),
+      longestChain:        Math.max(num(prevLocal.longestChain),         num(longestChainThisRun), num(stats.longestChain)),
+      highestMultiplier:   Math.max(num(prevLocal.highestMultiplier),    num(highestMultThisRun)),
+
+      // -------- session/unique (best-effort) --------
+      totalSessions: sessionsNow,
+      uniqueWords:   Math.max(num(prevLocal.uniqueWords), num(uniqueWordsThisRun)),
+    };
+
+    // Persist local all-time for the stats page if server data isn't available
+    persistStats(mergedAllTime);
+
+    // Send per-run summary to server (if signed in)
+    const summary = {
+      bestScore: Number(score) || 0,
+      longestChain: Number(longestChainThisRun || 0),
+      highestMultiplier: Number(highestMultThisRun || 0),
+      totalWords: Number(stats.totalWords ?? 0),
+      uniqueWords: Number(uniqueWordsThisRun || 0),
+      animals: Number(stats.animals ?? 0),
+      countries: Number(stats.countries ?? 0),
+      names: Number(stats.names ?? 0),
+      sameLetterWords: Number(stats.sameLetterWords ?? 0),
+      switches: Number(stats.switches ?? 0),
+      linksEarned: Number(stats.linksEarned ?? 0),
+      linksSpent: Number(stats.linksSpent ?? 0),
+    };
+    const result = await postRunToLeaderboard(summary);
+
+    if (!result.ok) {
+      if (result.status === 401) setMsg("Sign in with Google to save your score to the global leaderboard.");
+      else setMsg(result.msg || "Could not save score right now.");
+      setShowNamePrompt(true);
+    } else {
+      setShowNamePrompt(false);
+      setPlayerName("");
     }
-    localStorage.setItem("wc_session_speeds", JSON.stringify(speedsArr));
-
-    // 2) session counter
-    const prevSessions = Number(localStorage.getItem("wc_total_sessions") || "0") || 0;
-    localStorage.setItem("wc_total_sessions", String(prevSessions + 1));
-
-    // 3) peak effective multiplier for this run (already tracking effects)
-    const peaks = JSON.parse(localStorage.getItem("wc_peak_multipliers") || "[]");
-    const peaksArr = Array.isArray(peaks) ? peaks : [];
-    const peakThisRun = Number(peakTotalMultRef.current) || 1;
-    peaksArr.push(peakThisRun);
-    localStorage.setItem("wc_peak_multipliers", JSON.stringify(peaksArr));
-  } catch { /* ignore */ }
-
-  // Derive run-level fallbacks
-  const uniqueWordsThisRun = used.size;
-  const longestChainThisRun = maxChainRef.current || 0;
-  const highestMultThisRun = Number((peakTotalMultRef.current || 1).toFixed(2));
-
-  // ----- Merge with previous local all-time to preserve "records" -----
-  let prevLocal: any = {};
-  try { prevLocal = JSON.parse(localStorage.getItem("wc_stats") || "{}") || {}; } catch {}
-
-  const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-
-  const sessionsNow = num(localStorage.getItem("wc_total_sessions")); // already incremented above
-
-  const mergedAllTime = {
-    // keep any extra fields that may exist
-    ...prevLocal,
-
-    // -------- accumulators (add) --------
-    totalWords:        num(prevLocal.totalWords)        + num(stats.totalWords),
-    animals:           num(prevLocal.animals)           + num(stats.animals),
-    countries:         num(prevLocal.countries)         + num(stats.countries),
-    names:             num(prevLocal.names)             + num(stats.names),
-    sameLetterWords:   num(prevLocal.sameLetterWords)   + num(stats.sameLetterWords),
-    switches:          num(prevLocal.switches)          + num(stats.switches),
-    linksEarned:       num(prevLocal.linksEarned)       + num(stats.linksEarned),
-    linksSpent:        num(prevLocal.linksSpent)        + num(stats.linksSpent),
-
-    // -------- records (max) --------
-    highestWordScore:    Math.max(num(prevLocal.highestWordScore),    num(stats.highestWordScore)),
-    longestAnimalStreak: Math.max(num(prevLocal.longestAnimalStreak), num(stats.longestAnimalStreak)),
-    longestCountryStreak:Math.max(num(prevLocal.longestCountryStreak),num(stats.longestCountryStreak)),
-    longestNameStreak:   Math.max(num(prevLocal.longestNameStreak),   num(stats.longestNameStreak)),
-    longestChain:        Math.max(num(prevLocal.longestChain),         num(longestChainThisRun), num(stats.longestChain)),
-    highestMultiplier:   Math.max(num(prevLocal.highestMultiplier),    num(highestMultThisRun)),
-
-    // -------- session/unique (best-effort) --------
-    totalSessions: sessionsNow,
-    uniqueWords:   Math.max(num(prevLocal.uniqueWords), num(uniqueWordsThisRun)),
   };
-
-  // Persist local all-time for the stats page if server data isn't available
-  persistStats(mergedAllTime);
-
-  // Send per-run summary to server (if signed in)
-  const summary = {
-    bestScore: Number(score) || 0,
-    longestChain: Number(longestChainThisRun || 0),
-    highestMultiplier: Number(highestMultThisRun || 0),
-    totalWords: Number(stats.totalWords ?? 0),
-    uniqueWords: Number(uniqueWordsThisRun || 0),
-    animals: Number(stats.animals ?? 0),
-    countries: Number(stats.countries ?? 0),
-    names: Number(stats.names ?? 0),
-    sameLetterWords: Number(stats.sameLetterWords ?? 0),
-    switches: Number(stats.switches ?? 0),
-    linksEarned: Number(stats.linksEarned ?? 0),
-    linksSpent: Number(stats.linksSpent ?? 0),
-  };
-  const result = await postRunToLeaderboard(summary);
-
-  if (!result.ok) {
-    if (result.status === 401) setMsg("Sign in with Google to save your score to the global leaderboard.");
-    else setMsg(result.msg || "Could not save score right now.");
-    setShowNamePrompt(true);
-  } else {
-    setShowNamePrompt(false);
-    setPlayerName("");
-  }
-};
-
 
   const submitScore = async () => {
     const name = playerName.trim() || "Anonymous";
@@ -492,47 +530,45 @@ const endGame = async (reason: string) => {
 
   // 7 missions per category; 7 for main
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
-  const R = 0.5;
-  return [
-    // 1) Enter the category once
-    { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
+    const R = 0.5;
+    return [
+      // 1) Enter the category once
+      { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
 
-    // 2) Chain two in a row
-    { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
+      // 2) Chain two in a row
+      { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
 
-    // 3) Reach category multiplier x2.00
-    { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
+      // 3) Reach category multiplier x2.00
+      { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
 
-    // 4) Score >= 500 with a word in this category
-    { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 500, progress: 0, reward: R },
+      // 4) Score >= 500 with a word in this category
+      { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 500, progress: 0, reward: R },
 
-    // 5) Chain three in a row
-    { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
+      // 5) Chain three in a row
+      { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
 
-    // 6) Reach category multiplier x4.00
-    { id: newId(), owner: chain, chain, kind: "reachMult",  target: 4.0, progress: 0, reward: R },
+      // 6) Reach category multiplier x4.00
+      { id: newId(), owner: chain, chain, kind: "reachMult",  target: 4.0, progress: 0, reward: R },
 
-    // 7) Score >= 2000 with a word in this category
-    { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 2000, progress: 0, reward: R },
-  ];
-};
+      // 7) Score >= 2000 with a word in this category
+      { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 2000, progress: 0, reward: R },
+    ];
+  };
 
-const buildMainTrack = (): Mission[] => {
-  const R = 0.5;
+  const buildMainTrack = (): Mission[] => {
+    const R = 0.5;
 
-  // NOTE: "small letter" in your message is interpreted as "same-letter".
-  // Targets are exactly as requested.
-  return [
-    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 250,  progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 1000, progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 1.5,  progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 3.0,  progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 5000, progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 5.0,  progress: 0, reward: R },
-    { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 10000,progress: 0, reward: R },
-  ];
-};
-
+    // NOTE: "small letter" interpreted as "same-letter".
+    return [
+      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 250,  progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 1000, progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 1.5,  progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 3.0,  progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 5000, progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "reachSame",  target: 5.0,  progress: 0, reward: R },
+      { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 10000,progress: 0, reward: R },
+    ];
+  };
 
   const missionTracks: Record<ChainKeyOrMain, Mission[]> = useMemo(() => ({
     main: buildMainTrack(),
@@ -579,6 +615,9 @@ const buildMainTrack = (): Mission[] => {
     });
     setUnlockOrder((o) => [...o, owner]);
     setMsg(`New category unlocked: ${CHAIN_COLORS[owner].label}!`);
+    // SFX + subtle confetti
+    try { safePlay("unlock"); } catch {}
+    try { vfx.confettiBurst({ power: 0.8 }); } catch {}
   };
 
   const unlockRandomCategory = useCallback(() => {
@@ -586,75 +625,74 @@ const buildMainTrack = (): Mission[] => {
     if (remaining.length === 0) return;
     const pick = remaining[Math.floor(Math.random() * remaining.length)];
     appendUnlock(pick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unlocked]);
 
   /** ===================== Powerups (unique-word charges) ===================== */
-type PowerCharges = Record<PowerKey, number>;
+  type PowerCharges = Record<PowerKey, number>;
 
-const [powerCharges, setPowerCharges] = useState<PowerCharges>({
-  name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
-});
+  const [powerCharges, setPowerCharges] = useState<PowerCharges>({
+    name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
+  });
 
-// NEW: thresholds already credited (prevents double-charging)
-const [powerBucketsCredited, setPowerBucketsCredited] = useState<Record<PowerKey, number>>({
-  name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
-});
+  // NEW: thresholds already credited (prevents double-charging)
+  const [powerBucketsCredited, setPowerBucketsCredited] = useState<Record<PowerKey, number>>({
+    name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
+  });
 
-// Unique word sets per category and same-letter
-const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
-  name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
-});
-
+  // Unique word sets per category and same-letter
+  const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
+    name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
+  });
 
   const tryGrantChargeUnique = (key: PowerKey, rawWord: string) => {
-  const need = POWER_THRESHOLDS[key];
-  if (!need) return;
+    const need = POWER_THRESHOLDS[key];
+    if (!need) return;
 
-  const wNorm = norm(rawWord);
+    const wNorm = norm(rawWord);
 
-  setUniqueSeen((cur) => {
-    const prevSet = cur[key] ?? new Set<string>();
-    // If we've already counted this word for this key, do nothing.
-    if (prevSet.has(wNorm)) return cur;
+    setUniqueSeen((cur) => {
+      const prevSet = cur[key] ?? new Set<string>();
+      if (prevSet.has(wNorm)) return cur; // no double credit
 
-    const prevCount = prevSet.size;
-    const nextSet = new Set(prevSet);
-    nextSet.add(wNorm);
-    const newCount = nextSet.size;
+      const prevCount = prevSet.size;
+      const nextSet = new Set(prevSet);
+      nextSet.add(wNorm);
+      const newCount = nextSet.size;
 
-    const newBuckets = Math.floor(newCount / need);
+      const newBuckets = Math.floor(newCount / need);
 
-    // Update bucket credits & charges atomically relative to the latest state
-    setPowerBucketsCredited((buckets) => {
-      const prevBuckets = buckets[key] ?? 0;
-      const delta = newBuckets - prevBuckets;
-      if (delta > 0) {
-        setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
+      setPowerBucketsCredited((buckets) => {
+        const prevBuckets = buckets[key] ?? 0;
+        const delta = newBuckets - prevBuckets;
+        if (delta > 0) {
+          setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
+          // +0.5 LINK per bucket
+          setLinks((x) => {
+            const nx = Math.round((x + 0.5 * delta) * 2) / 2;
+            setStats((s) => ({ ...s, linksEarned: s.linksEarned + 0.5 * delta }));
+            return nx;
+          });
+          setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label} (+0.5 LINK)`);
+          // SFX/VFX for "ready" + coin
+          try { safePlay("coin"); } catch {}
+          try { safePlay(`power_${key}_ready` as any); } catch {}
+          try { vfx.ringBurstAtFromEl(inputDomRef.current || "input[name='word']"); } catch {}
+          return { ...buckets, [key]: newBuckets };
+        }
+        return buckets;
+      });
 
-        // CHANGE #1: Award +0.5 LINK per new charged bucket
-        setLinks((x) => {
-          const nx = Math.round((x + 0.5 * delta) * 2) / 2;
-          setStats((s) => ({ ...s, linksEarned: s.linksEarned + 0.5 * delta }));
-          return nx;
-        });
-
-        setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label} (+0.5 LINK)`);
-        return { ...buckets, [key]: newBuckets };
-      }
-      return buckets;
+      return { ...cur, [key]: nextSet };
     });
-
-    return { ...cur, [key]: nextSet };
-  });
-};
-
-
+  };
 
   const usePower = (key: PowerKey) => {
     setPowerCharges((ch) => {
       if ((ch[key] ?? 0) <= 0) return ch;
       const next = { ...ch, [key]: ch[key] - 1 };
+      // SFX for use
+      try { safePlay(`power_${key}_use` as any); } catch {}
 
       if (key === "country") {
         setUsed(new Set());
@@ -665,7 +703,6 @@ const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
         setPaused(true);
         setMsg("Timer frozen until your next valid word!");
       } else if (key === "animal") {
-        // +20x additive surge until multiplier is lost (lose animal chain or lose life)
         setSurgeActive(true);
         setMsg("Wild Surge active: +20x until you lose your multiplier.");
       } else if (key === "food") {
@@ -675,7 +712,6 @@ const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
         setNextWordAddBonus((b) => b + 50);
         setMsg("Sponsor Boost armed: +50x on the next word!");
       } else if (key === "screen") {
-        // Freeze 15s (doesn't override 'freeze until answer')
         setPaused(true);
         setMsg("Montage: timer frozen for 15s!");
         setTimeout(() => {
@@ -719,12 +755,11 @@ const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
     setMissionProgress({});
     setCompletedMissionIds(new Set());
 
-   setPowerCharges({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
-setUniqueSeen({
-  name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
-});
-setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
-
+    setPowerCharges({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
+    setUniqueSeen({
+      name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
+    });
+    setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
 
     // reset run analytics
     lastAcceptAtRef.current = null;
@@ -749,7 +784,6 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
       leaving.forEach((k) => { next[k] = { ...next[k], frozen: true }; });
     } else {
       leaving.forEach((k) => { next[k] = { length: 0, multiplier: 1, frozen: false }; });
-      // If we just lost the animal chain multiplier due to switching without link, end surge
       if (leaving.has("animal")) setSurgeActive(false);
     }
     setStats((s) => ({ ...s, switches: s.switches + 1 }));
@@ -798,13 +832,30 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
     const w = raw;
     input.value = "";
 
-    if (used.has(w.toLowerCase())) { setMsg("Already used."); return; }
+    if (used.has(w.toLowerCase())) { 
+      setMsg("Already used.");
+      try { safePlay("used"); } catch {}
+      try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
+      return; 
+    }
     if (last !== "start") {
-      if (firstLetter(w) !== lastLetter(last)) { loseLife("Invalid entry"); setMsg(`Must start with “${lastLetter(last)}”.`); return; }
-      if (!w.toLowerCase().includes(firstLetter(last))) { loseLife("Invalid entry"); setMsg(`Must include “${firstLetter(last)}”.`); return; }
+      if (firstLetter(w) !== lastLetter(last)) { 
+        try { safePlay("invalid"); } catch {}
+        try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
+        loseLife("Invalid entry"); setMsg(`Must start with “${lastLetter(last)}”.`); return; 
+      }
+      if (!w.toLowerCase().includes(firstLetter(last))) { 
+        try { safePlay("invalid"); } catch {}
+        try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
+        loseLife("Invalid entry"); setMsg(`Must include “${firstLetter(last)}”.`); return; 
+      }
     }
     const ok = await validateWord(w);
-    if (!ok) { loseLife("Invalid entry"); setMsg("Not an official word."); return; }
+    if (!ok) { 
+      try { safePlay("invalid"); } catch {}
+      try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
+      loseLife("Invalid entry"); setMsg("Not an official word."); return; 
+    }
 
     // if we were frozen until next answer, release it now
     if (pauseUntilAnswer) {
@@ -845,7 +896,7 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
     });
     next = applySwitching(enteringCats, next);
     setChains(next);
-    setPrevCats(enteringCats);
+    setPrevCats(enteringCats); // used to highlight active chain rows
 
     // scoring
     const catsArr = Array.from(enteringCats);
@@ -860,6 +911,27 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
         nextWordAddBonus > 0 ? ` · +${nextWordAddBonus}x next-word` : ""
       }${surgeActive ? " · +20x surge" : ""})`
     );
+
+    // accept sfx + subtle ring/glow at input
+    try { safePlay("accept"); } catch {}
+    try {
+      const el = inputDomRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        vfx.ringBurstAt(r.left + r.width / 2, r.top + r.height / 2);
+        vfx.glowOnce(el);
+      } else {
+        vfx.ringBurstAtFromEl("input[name='word']");
+      }
+    } catch {}
+
+    // big single-word score celebration (>=2000)
+    if (gained >= 2000) {
+      try { safePlay("bigword"); } catch {}
+      try { vfx.confettiBurst({ power: 2 }); } catch {}
+      try { vfx.shake("#score", 300); } catch {}
+    }
+
     if (nextWordAddBonus !== 0) setNextWordAddBonus(0);
 
     // stats (records & per-category streaks)
@@ -889,8 +961,6 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
           if (m.kind === "enterChain" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
           if (m.kind === "reachMult") {
             const current = next[m.chain].multiplier;
-
-            // CHANGE #2 (part A): make reachMult progress interval-based
             nx[id] = Math.min((m as any).target, current);
           }
           if (m.kind === "combo") nx[id] = inCat ? Math.min((m as any).target, cur + 1) : 0;
@@ -898,7 +968,6 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
           if (m.kind === "validWords" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
         } else {
           if (m.kind === "reachSame") {
-            // CHANGE #2 (part B): main reachSame shows smooth progress to target
             nx[id] = Math.min((m as any).target, sameMult);
           } else if (m.kind === "totalScore") {
             nx[id] = Math.min((m as any).target, cur + gained);
@@ -931,6 +1000,10 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
     if (addLinks > 0) {
       setLinks((x) => { const nx = x + addLinks; setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks })); return nx; });
       setMsg(`Mission complete! +${addLinks.toFixed(1)} LINK${addLinks !== 0.5 ? "s" : ""}`);
+      // SFX/VFX for mission complete + coin
+      try { safePlay("mission"); } catch {}
+      try { safePlay("coin"); } catch {}
+      try { vfx.confettiBurst({ power: 1.2 }); } catch {}
     }
 
     setCompletedMissionIds((prev) => {
@@ -977,7 +1050,7 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
         }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missionProgress, currentMissions]);
 
   /** ===================== UI helpers ===================== */
@@ -1000,7 +1073,19 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
     return { cur, need };
   };
 
-      /** ===================== UI ===================== */
+  /** ===================== Typing SFX (gentle throttle, non-blocking) ===================== */
+  const lastTypeAt = useRef<number>(0);
+  const onTypeKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Only for actual character keys
+    if (e.key.length !== 1) return;
+    const now = performance.now();
+    if (now - lastTypeAt.current > 70) {
+      safePlay("typing", { volume: 0.25 });
+      lastTypeAt.current = now;
+    }
+  };
+
+  /** ===================== UI ===================== */
   return (
     <>
       <div className="grid gap-6 md:grid-cols-3">
@@ -1037,7 +1122,7 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
         ) : (
           <>
             {/* Score & Chains */}
-            <div className="card space-y-3">
+            <div className="card space-y-3" id="score">
               <div className="text-lg">Score: <b>{score}</b></div>
               <div>Lives: {"❤️".repeat(Math.max(0, lives))}{lives <= 0 && " (none)"} (max 5 with Foods powerup)</div>
               <div className="flex items-center gap-2">
@@ -1052,13 +1137,44 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
                 </span>
               </div>
 
-              <div className="space-y-1 pt-2 text-sm">
-                <div>Names: <b>{fmt(chains.name.multiplier)}</b> {chains.name.frozen && "(frozen)"} len {chains.name.length}</div>
-                <div>Animals: <b>{fmt(chains.animal.multiplier)}</b> {chains.animal.frozen && "(frozen)"} len {chains.animal.length}</div>
-                <div>Countries: <b>{fmt(chains.country.multiplier)}</b> {chains.country.frozen && "(frozen)"} len {chains.country.length}</div>
-                <div>Foods: <b>{fmt(chains.food.multiplier)}</b> {chains.food.frozen && "(frozen)"} len {chains.food.length}</div>
-                <div>Brands: <b>{fmt(chains.brand.multiplier)}</b> {chains.brand.frozen && "(frozen)"} len {chains.brand.length}</div>
-                <div>TV/Movies: <b>{fmt(chains.screen.multiplier)}</b> {chains.screen.frozen && "(frozen)"} len {chains.screen.length}</div>
+              {/* Chain rows with frozen & active VFX */}
+              <div className="grid gap-2 pt-2 text-sm">
+                <ChainRow
+                  k="name"
+                  state={chains.name}
+                  color={CHAIN_COLORS.name}
+                  active={prevCats.has("name")}
+                />
+                <ChainRow
+                  k="animal"
+                  state={chains.animal}
+                  color={CHAIN_COLORS.animal}
+                  active={prevCats.has("animal")}
+                />
+                <ChainRow
+                  k="country"
+                  state={chains.country}
+                  color={CHAIN_COLORS.country}
+                  active={prevCats.has("country")}
+                />
+                <ChainRow
+                  k="food"
+                  state={chains.food}
+                  color={CHAIN_COLORS.food}
+                  active={prevCats.has("food")}
+                />
+                <ChainRow
+                  k="brand"
+                  state={chains.brand}
+                  color={CHAIN_COLORS.brand}
+                  active={prevCats.has("brand")}
+                />
+                <ChainRow
+                  k="screen"
+                  state={chains.screen}
+                  color={CHAIN_COLORS.screen}
+                  active={prevCats.has("screen")}
+                />
                 <div>Same-Letter Bonus: <b>{fmt(sameMult)}</b></div>
               </div>
             </div>
@@ -1067,7 +1183,14 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
             <div className="card md:col-span-1">
               <div className="text-sm text-gray-500">Last word: <b className="break-words">{last === "start" ? "—" : last}</b></div>
               <form className="mt-3 flex gap-2" onSubmit={onSubmit}>
-                <input name="word" placeholder="Enter a word" className="flex-1 rounded-xl border p-3 break-words" autoFocus />
+                <input
+                  ref={inputDomRef}
+                  name="word"
+                  placeholder="Enter a word"
+                  className="flex-1 rounded-xl border p-3 break-words"
+                  autoFocus
+                  onKeyDown={onTypeKey}
+                />
                 <button className="btn btn-primary">Submit</button>
               </form>
               <div className="mt-3 text-rose-600 min-h-6 break-words">{msg}</div>
@@ -1096,7 +1219,7 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
             </div>
 
             {/* Right column: Active missions */}
-            <div className="md:col-span-1 space-y-4">
+            <div className="md:col-span-1 space-y-4" id="missions-panel">
               <div className="card">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold">Missions</h3>
@@ -1129,10 +1252,15 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
                     if (!m) return null;
                     const id = m.id;
                     const progressCurrent = missionProgress[id] ?? 0;
+                    const isReachMult = (m.owner !== "main") && (m as any).kind === "reachMult";
                     const target = m.owner === "main" && (m as any).kind === "sequence"
                       ? (m as any).sequence.length
                       : (m as any).target;
-                    const bar = Math.min(100, (progressCurrent / target) * 100);
+                    const bar = Math.min(100, (Number(progressCurrent) / Number(target)) * 100);
+
+                    // pretty display for counters (clamp decimals for reachMult)
+                    const displayCurrent = isReachMult ? Number(progressCurrent).toFixed(2) : String(progressCurrent);
+                    const displayTarget  = isReachMult ? Number(target).toFixed(2) : String(target);
 
                     return (
                       <div key={id} className={`rounded-xl border ${c.border} p-2`}>
@@ -1165,7 +1293,7 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
                           </span>
 
                           <div className="min-w-[120px] text-right text-xs text-gray-600">
-                            {progressCurrent}/{target}
+                            {displayCurrent}/{displayTarget}
                             <div className="mt-1 h-1.5 w-32 rounded bg-gray-200 overflow-hidden">
                               <div className="h-1.5 bg-black/60" style={{ width: `${bar}%` }} />
                             </div>
@@ -1319,9 +1447,295 @@ setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, scr
           </div>
         </div>
       )}
+
+      {/* Local styles for ice & active glow */}
+   <style jsx global>{`
+  /* ===== active glow on category switch ===== */
+  @keyframes wcPulse {
+    0% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0.35); }
+    70% { box-shadow: 0 0 0 8px rgba(0, 150, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0); }
+  }
+  .wc-active-glow { animation: wcPulse 1.4s ease-out 1; }
+
+  /* ===== ICE OVERLAY LAYERS ===== */
+  .wc-ice-wrap {
+    position: absolute; inset: 0;
+    border-radius: 0.75rem;
+    overflow: hidden; pointer-events: none; z-index: 1;
+  }
+
+  /* cool rim so the “frozen” state reads at a glance */
+  .wc-ice-rim {
+    position: absolute; inset: 0; border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 2px rgba(140, 195, 255, .75),
+      inset 0 0 22px rgba(120, 185, 255, .55),
+      inset 0 8px 28px rgba(180, 225, 255, .35);
+    filter: saturate(1.1);
+    opacity: .95;
+  }
+
+  /* tint that grows in using a conic mask */
+  .wc-ice-tint {
+    position: absolute; inset: 0; border-radius: inherit;
+    background:
+      radial-gradient(120% 120% at 10% 110%, rgba(190,225,255,.42), rgba(160,210,255,.36) 35%, rgba(135,200,255,.30) 60%, rgba(125,195,255,.12) 80%),
+      linear-gradient(to top, rgba(150,205,255,.40), rgba(235,250,255,.28));
+    backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
+    -webkit-backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
+    mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg);
+    animation: wcIceGrow 700ms ease-out forwards;
+  }
+  @keyframes wcIceGrow {
+    from { mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg); }
+    to   { mask: conic-gradient(from 270deg at 0% 100%, transparent 360deg, black 360deg); }
+  }
+
+  /* subtle crystalline noise drifting */
+  .wc-ice-noise {
+    position: absolute; inset: 0; opacity: .35; mix-blend-mode: overlay;
+    background-size: 240px 240px;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,.25) 0 12%, transparent 13% 100%),
+      radial-gradient(circle at 70% 60%, rgba(255,255,255,.2) 0 10%, transparent 11% 100%),
+      radial-gradient(circle at 35% 80%, rgba(255,255,255,.18) 0 9%, transparent 10% 100%),
+      radial-gradient(circle at 85% 25%, rgba(255,255,255,.18) 0 11%, transparent 12% 100%);
+    animation: wcNoiseDrift 6s ease-in-out infinite alternate;
+  }
+  @keyframes wcNoiseDrift {
+    from { transform: translate3d(0,0,0) scale(1); }
+    to   { transform: translate3d(-6px,-4px,0) scale(1.02); }
+  }
+
+  /* animated crack field — kept BLUE and higher contrast */
+  .wc-ice-cracks {
+    position: absolute; inset: 0; opacity: .7;
+    background-repeat: repeat; background-size: 220px 140px;
+    filter: saturate(1.15) drop-shadow(0 0 1px rgba(90,150,220,.25));
+    animation: wcCrackFade 480ms ease-out 80ms both;
+    --crack: url("data:image/svg+xml;utf8,\
+      <svg xmlns='http://www.w3.org/2000/svg' width='220' height='140' viewBox='0 0 220 140'>\
+        <g fill='none' stroke='%2387befc' stroke-opacity='1' stroke-width='1.2' stroke-linecap='round'>\
+          <path d='M10 120 L40 90 L70 110' stroke-dasharray='6 9'><animate attributeName=\"stroke-dashoffset\" from=\"80\" to=\"0\" dur=\"0.9s\" fill=\"freeze\"/></path>\
+          <path d='M95 135 L115 95 L160 115' stroke-dasharray='7 8'><animate attributeName=\"stroke-dashoffset\" from=\"70\" to=\"0\" dur=\"0.95s\" fill=\"freeze\"/></path>\
+          <path d='M20 20 L35 35 L55 22' stroke-dasharray='5 7'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+          <path d='M130 18 L150 40 L175 24' stroke-dasharray='5 8'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.85s\" fill=\"freeze\"/></path>\
+          <path d='M78 8 L85 28 L98 14' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+          <path d='M62 92 L70 108 L84 98' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+        </g>\
+      </svg>");
+    background-image: var(--crack);
+  }
+  @keyframes wcCrackFade { from { opacity: 0; } to { opacity: .7; } }
+
+  /* sparkles drifting up */
+  .wc-ice-sparkles { position: absolute; inset: 0; overflow: hidden; }
+  .wc-ice-sparkle {
+    position: absolute; width: 6px; height: 6px; border-radius: 999px;
+    background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,.5) 45%, rgba(255,255,255,0) 72%);
+    left: calc(6% + (88% * var(--i, 0)));
+    top: 100%;
+    opacity: 0;
+    animation: wcSpark 1500ms ease-in infinite;
+    animation-delay: var(--d, 0s);
+    transform: translateY(0) scale(.7);
+  }
+  .wc-ice-sparkle:nth-child(odd)  { --i: .12; width: 4px; height: 4px; }
+  .wc-ice-sparkle:nth-child(3n)   { --i: .42; }
+  .wc-ice-sparkle:nth-child(4n)   { --i: .68; }
+  .wc-ice-sparkle:nth-child(5n)   { --i: .84; }
+  @keyframes wcSpark {
+    0%   { opacity: 0; transform: translateY(0) scale(.6); }
+    12%  { opacity: 1; }
+    75%  { opacity: .8; }
+    100% { opacity: 0; transform: translateY(-140%) scale(1); }
+  }
+`}</style>
+
+
+
     </>
   );
 } // ← END WordChains component
+
+/** ===== Tiny canvas burst for thaw/unfreeze moments ===== */
+function thawBurstAt(target?: HTMLElement | null, opts?: {
+  shards?: number; durationMs?: number;
+}) {
+  if (!target) return;
+
+  const rect = target.getBoundingClientRect();
+  const canvas = document.createElement("canvas");
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.style.position = "absolute";
+  canvas.style.left = "0";
+  canvas.style.top = "0";
+  canvas.style.pointerEvents = "none";
+  canvas.style.zIndex = "2"; // above frost layers
+
+  // mount canvas inside the row container
+  target.style.position ||= "relative";
+  target.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) { canvas.remove(); return; }
+  ctx.scale(dpr, dpr);
+
+  const N = Math.max(14, Math.min(48, (opts?.shards ?? 26)));
+  const dur = Math.max(300, Math.min(1200, opts?.durationMs ?? 650));
+  const t0 = performance.now();
+
+  // create “shards”
+  type Shard = { x: number; y: number; vx: number; vy: number; rot: number; vrot: number; r: number; a: number; hue: number };
+  const shards: Shard[] = [];
+  for (let i = 0; i < N; i++) {
+    const a = (Math.PI * 2 * i) / N + (Math.random() * 0.7 - 0.35);
+    const speed = 160 + Math.random() * 220;
+    shards.push({
+      x: w * 0.5, y: h * 0.5,
+      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - 40 * Math.random(),
+      rot: Math.random() * Math.PI, vrot: (Math.random() - 0.5) * 6,
+      r: 2 + Math.random() * 10,
+      a: 1,
+      hue: 205 + Math.random() * 20,
+    });
+  }
+
+  function step(now: number) {
+    const t = (now - t0) / dur; // 0..1
+    if (t >= 1) { canvas.remove(); return; }
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    for (const s of shards) {
+      // integrate
+      s.x += s.vx * (1 / 60);
+      s.y += s.vy * (1 / 60);
+      s.vy += 240 * (1 / 60); // gravity-ish
+      s.rot += s.vrot * (1 / 60);
+      // fade
+      s.a = Math.max(0, 1 - t);
+
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.beginPath();
+      // skinny triangle shard
+      ctx.moveTo(0, 0);
+      ctx.lineTo(s.r * 0.6, -s.r * 3);
+      ctx.lineTo(-s.r * 0.6, -s.r * 2.6);
+      ctx.closePath();
+      ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${0.65 * s.a})`;
+      ctx.strokeStyle = `hsla(${s.hue}, 95%, 85%, ${0.8 * s.a})`;
+      ctx.lineWidth = 0.8;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+
+/** ===== ChainRow: line per category with strong frozen VFX + thaw burst ===== */
+/** ===== ChainRow: one line per category with frozen overlay & thaw burst ===== */
+function ChainRow({
+  k,
+  state,
+  color,
+  active,
+}: {
+  k: ChainKey;
+  state: ChainState;
+  color: { badge: string; border: string; text: string; label: string; solid: string };
+  active?: boolean;
+}) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const prevFrozen = React.useRef(state.frozen);
+  const [thawing, setThawing] = React.useState(false);
+
+  // Play one-shot burst + flash when frozen -> unfrozen
+  React.useEffect(() => {
+    const was = prevFrozen.current;
+    const now = state.frozen;
+    if (was && !now) {
+      setThawing(true);
+      thawBurstAt(containerRef.current, { shards: 24, durationMs: 560 });
+      const t = setTimeout(() => setThawing(false), 600);
+      prevFrozen.current = now;
+      return () => clearTimeout(t);
+    }
+    prevFrozen.current = now;
+  }, [state.frozen]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={[
+        "relative rounded-xl border p-2 bg-white/80 overflow-hidden",
+        color.border,
+        active ? "wc-active-glow ring-1 ring-sky-300" : "",
+        state.frozen ? "shadow-inner" : "",
+      ].join(" ")}
+    >
+      {/* Strong frozen overlay while frozen */}
+      {state.frozen && <FrozenOverlay />}
+
+      {/* Quick thaw flash when unfreezing */}
+      {thawing && <div className="wc-thaw-flash" aria-hidden />}
+
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color.badge} ${color.text}`}>
+            {color.label}
+          </span>
+          {state.frozen && <span className="text-[11px] text-sky-800/90">frozen</span>}
+        </div>
+        <div className="text-sm">
+          <b>{fmt(state.multiplier)}</b> <span className="text-gray-600">len {state.length}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/** ===== FrozenOverlay: bold icy growth + rim + cracks + sparkles ===== */
+function FrozenOverlay() {
+  return (
+    <div className="wc-ice-wrap" aria-hidden>
+      {/* frosty rim around the card */}
+      <div className="wc-ice-rim" />
+      {/* blue-ish tint that grows in */}
+      <div className="wc-ice-tint" />
+      {/* crystalline noise for texture */}
+      <div className="wc-ice-noise" />
+      {/* animated cracks */}
+      <div className="wc-ice-cracks" />
+      {/* sparkles that float up */}
+      <div className="wc-ice-sparkles">
+        {Array.from({ length: 16 }).map((_, i) => (
+          <span key={i} className="wc-ice-sparkle" style={{ ['--d' as any]: `${i * 0.1}s` }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
 
 /** Small helper component for powerup rows (tile itself fills; click to use) */
 function PowerRow({
@@ -1366,7 +1780,6 @@ function PowerRow({
         "transition-all select-none",
         canUse ? "cursor-pointer hover:shadow-md active:scale-[0.99]" : "cursor-not-allowed opacity-75",
         ready && canUse ? `ring-2 ring-offset-1 ring-offset-white ${ringClass || ""} wc-glow` : ""
-
       ].join(" ")}
     >
       {/* FILL LAYER: whole tile fills with category color but keeps content readable */}
@@ -1388,7 +1801,10 @@ function PowerRow({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             {icon && <span className="text-lg" aria-hidden>{icon}</span>}
-            <span className="text-sm font-semibold truncate">{label}</span>
+            {/* Allow long names to wrap instead of truncating with … */}
+            <span className="text-sm font-semibold whitespace-normal break-words leading-tight">
+              {label}
+            </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-sm font-semibold tabular-nums">{available}</span>
@@ -1398,7 +1814,7 @@ function PowerRow({
         {/* Subline: CATEGORY on left, counter on right */}
         {(info || counter) && (
           <div className="mt-1 flex items-center justify-between text-[11px] text-gray-800">
-            <span className="truncate">{info}</span>
+            <span className="whitespace-normal break-words">{info}</span>
             {counter && <span className="ml-2 shrink-0 tabular-nums">{counter}</span>}
           </div>
         )}

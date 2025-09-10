@@ -8,6 +8,7 @@ body { @apply bg-white text-gray-900 antialiased; }
 .btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium shadow-soft transition; }
 .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700; }
 .btn-ghost { @apply bg-gray-100 hover:bg-gray-200; }
+
 /* --- Power dock subtle glow for ready powerups --- */
 @keyframes wc-glow-pulse {
   /* Keep Tailwind ring via CSS vars, add our halo as the 3rd shadow */
@@ -32,3 +33,21 @@ body { @apply bg-white text-gray-900 antialiased; }
 @media (prefers-reduced-motion: reduce) {
   .wc-glow { animation: none; }
 }
+
+/* --- Dopamine micro-animations (shake + pop) --- */
+@keyframes wc-shake-kf {
+  0% { transform: translateX(0) }
+  20% { transform: translateX(-6px) }
+  40% { transform: translateX(6px) }
+  60% { transform: translateX(-4px) }
+  80% { transform: translateX(4px) }
+  100% { transform: translateX(0) }
+}
+.wc-shake { animation: wc-shake-kf 0.35s ease-in-out; }
+
+@keyframes wc-pop-kf {
+  0% { transform: scale(0.9); opacity: 0.0 }
+  40% { transform: scale(1.08); opacity: 1 }
+  100% { transform: scale(1.0); opacity: 1 }
+}
+.wc-pop { animation: wc-pop-kf 220ms cubic-bezier(.2, .8, .3, 1.2); }
