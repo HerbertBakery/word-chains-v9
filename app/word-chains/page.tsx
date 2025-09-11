@@ -105,7 +105,13 @@ async function postRunToLeaderboard(summary: {
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
-  const { play, stop } = useSound(); // require stop()
+  // SFX hook (prod-safe): some builds expose only { play, isUnlocked }.
+// We polyfill a no-op stop() if it's missing so calls like stop("warning") don't break.
+const sound = useSound();
+const play = sound.play;
+const stop: (...args: any[]) => void =
+  (sound as any).stop?.bind(sound) ?? ((..._args: any[]) => {});
+
 
   const vfx = useVFX();
   const inputDomRef = useRef<HTMLInputElement>(null);
