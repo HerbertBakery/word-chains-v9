@@ -105,10 +105,21 @@ async function postRunToLeaderboard(summary: {
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
-  const { play } = useSound();
+  const { play, stop } = useSound(); // require stop()
+
   const vfx = useVFX();
   const inputDomRef = useRef<HTMLInputElement>(null);
   const lowWarnTickRef = useRef<number | null>(null); // to avoid spamming warning sfx
+  const timeoutLatchRef = useRef(false);              // prevent double timeouts
+  const warningPlayingRef = useRef(false);            // track heartbeat state
+
+  // Latches that mirror started/paused without stale closures.
+  // (We sync these AFTER the state variables are declared.)
+  const startedRef = useRef(false);
+  const pausedRef  = useRef(false);
+
+  
+
 
   // ---- SAFARI-SAFE, NON-BLOCKING SOUND WRAPPER (surgical) ----
   const safePlay = useCallback(
@@ -202,19 +213,24 @@ export default function WordChains() {
       });
     })();
   }, []);
+/** ===================== Core game state ===================== */
+const [started, setStarted] = useState(false);
+const [paused, setPaused] = useState(false);
 
-  /** ===================== Core game state ===================== */
-  const [started, setStarted] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [last, setLast] = useState<string>("start");
-  const [used, setUsed] = useState<Set<string>>(new Set());
-  const [recent, setRecent] = useState<string[]>([]);
-  const [score, setScore] = useState(0);
-  const [links, setLinks] = useState(0);
-  const [lives, setLives] = useState(3);
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [msg, setMsg] = useState("");
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+// keep refs in sync with latest state
+useEffect(() => { startedRef.current = started; }, [started]);
+useEffect(() => { pausedRef.current  = paused;  }, [paused]);
+
+const [last, setLast] = useState<string>("start");
+const [used, setUsed] = useState<Set<string>>(new Set());
+const [recent, setRecent] = useState<string[]>([]);
+const [score, setScore] = useState(0);
+const [links, setLinks] = useState(0);
+const [lives, setLives] = useState(3);
+const [timeLeft, setTimeLeft] = useState(30);
+const [msg, setMsg] = useState("");
+const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   // Post game
   const [showNamePrompt, setShowNamePrompt] = useState(false);
@@ -339,38 +355,81 @@ export default function WordChains() {
   const [prevCats, setPrevCats] = useState<Set<ChainKey>>(new Set());
 
   /** ===================== Timer ===================== */
-  useEffect(() => {
-    if (!started || paused) return;
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => setTimeLeft((t) => t - 1), 1000);
-    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
-  }, [started, paused]);
-
-  useEffect(() => { if (started && timeLeft <= 0) loseLife("Time's up!"); }, [timeLeft, started]);
-
-  /* ===== Low-timer warning SFX (<=5s, one ping per second) ===== */
-  useEffect(() => {
-    if (!started || paused) return;
-    if (timeLeft > 0 && timeLeft <= 5) {
-      if (lowWarnTickRef.current !== timeLeft) {
-        safePlay("warning", { volume: 0.5 });
-        lowWarnTickRef.current = timeLeft;
-      }
+useEffect(() => {
+  if (!started || paused) return;
+  if (timerRef.current) clearInterval(timerRef.current);
+  timerRef.current = setInterval(
+    () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
+    1000
+  );
+  return () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-    if (timeLeft > 5) lowWarnTickRef.current = null;
-  }, [timeLeft, started, paused, safePlay]);
-
-  const loseLife = (why: string) => {
-    // breaking the chain on a mistake/timeout
-    currentChainRef.current = 0;
-    setSurgeActive(false); // losing a life ends animal surge
-    setLives((l) => {
-      const n = l - 1;
-      if (n <= 0) endGame(why);
-      else { setMsg(`${why} – you lost a life`); setTimeLeft(30); }
-      return n;
-    });
   };
+}, [started, paused]);
+
+  useEffect(() => {
+  if (!started) return;                 // only care while game is running
+
+  // If not at exactly 0, clear the latch and exit
+  if (timeLeft !== 0) {
+    timeoutLatchRef.current = false;
+    return;
+  }
+
+  // At 0 → ensure we only fire once
+  if (timeoutLatchRef.current) return;
+  timeoutLatchRef.current = true;
+
+  // Stop heartbeat immediately at 0
+  try { (stop as any)("warning"); } catch {}
+  warningPlayingRef.current = false;
+
+  // Stop the ticking interval; we’ll reset/restart below (if still running)
+  if (timerRef.current) {
+    clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+
+  // Deduct exactly one life (your loseLife plays SFX unless it's final)
+  loseLife("Time's up!");
+
+  // If the run is still alive after losing a life, reset the clock to 30 and resume ticking
+  // Use refs to avoid stale values on this microtask turn.
+  setTimeout(() => {
+    if (!startedRef.current) return;    // endGame may have run
+    setTimeLeft(30);
+    if (!pausedRef.current) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(
+        () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
+        1000
+      );
+    }
+    // allow future timeouts
+    timeoutLatchRef.current = false;
+  }, 0);
+}, [timeLeft, started, stop]);
+
+
+
+
+ /* ===== Low-timer warning SFX (looping, single instance) ===== */
+useEffect(() => {
+  const inDanger = started && !paused && timeLeft > 0 && timeLeft <= 5;
+
+  if (inDanger && !warningPlayingRef.current) {
+    try { (play as any)("warning", { loop: true, volume: 0.5 }); warningPlayingRef.current = true; } catch {}
+  }
+
+  if (!inDanger && warningPlayingRef.current) {
+    try { (stop as any)("warning"); } catch {}
+    warningPlayingRef.current = false;
+  }
+}, [timeLeft, started, paused, play, stop]);
+
 
   // Additive multiplier bonuses
   const [nextWordAddBonus, setNextWordAddBonus] = useState(0); // e.g., +50x or +10x next word
@@ -387,11 +446,48 @@ export default function WordChains() {
     if (eff > peakTotalMultRef.current) peakTotalMultRef.current = eff;
   }, [totalMult, surgeActive, nextWordAddBonus]);
 
+  // (Optional) tighter "lifeLost" playback that skips tiny leading silence (~60ms)
+// If you already added this earlier, keep your existing helper and skip this one.
+const playLifeLostTight = () => {
+  const off = 0.06; // 60ms
+  try { (play as any)("lifeLost", { seek: off, offset: off, startAt: off }); }
+  catch { try { (play as any)("lifeLost"); } catch {} }
+};
+
+// Lose a life and handle game-over if no lives left
+const loseLife = (reason: string) => {
+  setLives((l) => {
+    const next = l - 1;
+
+    // Always stop the heartbeat as soon as a life is lost
+    try { (stop as any)("warning"); } catch {}
+    if (typeof warningPlayingRef !== "undefined") warningPlayingRef.current = false;
+
+    if (next <= 0) {
+      // FINAL life: do NOT play the "lifeLost" sound; go straight to game over SFX via endGame
+      endGame(reason);
+      return 0;
+    }
+
+    // Non-final life: play the lose-life sound, show message, and shake the score
+    setMsg(`${reason} (-1 life)`);
+    try { playLifeLostTight(); } catch { try { (play as any)("lifeLost"); } catch {} }
+    try { vfx.shake("#score", 400); } catch {}
+
+    return next;
+  });
+};
+
+
   // REPLACE your existing endGame with this:
   const endGame = async (reason: string) => {
     setStarted(false);
     setMsg(`Game over: ${reason}`);
     setFinalScore(score);
+
+    // ensure heartbeat is killed on game end
+    try { stop("warning"); } catch {}
+    warningPlayingRef.current = false;
 
     // sfx
     try { safePlay("gameover"); } catch {}
@@ -530,7 +626,7 @@ export default function WordChains() {
 
   // 7 missions per category; 7 for main
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
-    const R = 0.5;
+    const R = 1;
     return [
       // 1) Enter the category once
       { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
@@ -556,7 +652,7 @@ export default function WordChains() {
   };
 
   const buildMainTrack = (): Mission[] => {
-    const R = 0.5;
+    const R = 1;
 
     // NOTE: "small letter" interpreted as "same-letter".
     return [
@@ -840,21 +936,21 @@ export default function WordChains() {
     }
     if (last !== "start") {
       if (firstLetter(w) !== lastLetter(last)) { 
-        try { safePlay("invalid"); } catch {}
         try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-        loseLife("Invalid entry"); setMsg(`Must start with “${lastLetter(last)}”.`); return; 
+        loseLife(`Invalid: Must start with “${lastLetter(last)}”.`);
+        return;
       }
       if (!w.toLowerCase().includes(firstLetter(last))) { 
-        try { safePlay("invalid"); } catch {}
         try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-        loseLife("Invalid entry"); setMsg(`Must include “${firstLetter(last)}”.`); return; 
+        loseLife(`Invalid: Must include “${firstLetter(last)}”.`);
+        return;
       }
     }
     const ok = await validateWord(w);
     if (!ok) { 
-      try { safePlay("invalid"); } catch {}
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-      loseLife("Invalid entry"); setMsg("Not an official word."); return; 
+      loseLife("Invalid: Not an official word.");
+      return;
     }
 
     // if we were frozen until next answer, release it now
@@ -914,6 +1010,12 @@ export default function WordChains() {
 
     // accept sfx + subtle ring/glow at input
     try { safePlay("accept"); } catch {}
+
+    // HARD stop the heartbeat immediately on a correct word
+    try { stop("warning"); } catch {}
+    warningPlayingRef.current = false;
+    lowWarnTickRef.current = null;
+
     try {
       const el = inputDomRef.current;
       if (el) {
@@ -996,11 +1098,22 @@ export default function WordChains() {
     });
     if (!justFinished.length) return;
 
-    const addLinks = 0.5 * justFinished.length;
+    // Sum the rewards on the finished missions (now 1.0 each)
+    const addLinks = justFinished.reduce((sum, m) => sum + (Number((m as any).reward) || 0), 0);
+
     if (addLinks > 0) {
-      setLinks((x) => { const nx = x + addLinks; setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks })); return nx; });
-      setMsg(`Mission complete! +${addLinks.toFixed(1)} LINK${addLinks !== 0.5 ? "s" : ""}`);
-      // SFX/VFX for mission complete + coin
+      setLinks((x) => {
+        const nx = x + addLinks;
+        setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks }));
+        return nx;
+      });
+
+      // Friendly formatting + pluralization
+      const amt = addLinks.toFixed(1);
+      const plural = Math.abs(addLinks - 1) < 1e-9 ? "" : "s";
+      setMsg(`Mission complete! +${amt} LINK${plural}`);
+
+      // SFX/VFX for mission complete + coin (still plays on any amount, 0.5 or 1)
       try { safePlay("mission"); } catch {}
       try { safePlay("coin"); } catch {}
       try { vfx.confettiBurst({ power: 1.2 }); } catch {}
@@ -1124,7 +1237,7 @@ export default function WordChains() {
             {/* Score & Chains */}
             <div className="card space-y-3" id="score">
               <div className="text-lg">Score: <b>{score}</b></div>
-              <div>Lives: {"❤️".repeat(Math.max(0, lives))}{lives <= 0 && " (none)"} (max 5 with Foods powerup)</div>
+              <div>Lives: {"❤️".repeat(Math.max(0, lives))}{lives <= 0 && " (none)"} (max 5 )</div>
               <div className="flex items-center gap-2">
                 <div>Time Left: {timeLeft}s {paused && <span className="text-xs text-gray-500">(frozen)</span>}</div>
               </div>
@@ -1289,7 +1402,9 @@ export default function WordChains() {
                                 {(m as any).kind === "sequence" && (<>Sequence: <b>{(m as any).sequence.map((x: ChainKey) => CHAIN_COLORS[x].label).join(" → ")}</b></>)}
                               </>
                             )}
-                            <span className="ml-2 text-xs text-gray-600">— Reward: <b>0.5</b> LINK</span>
+                            <span className="ml-2 text-xs text-gray-600">
+                              — Reward: <b>{Number((m as any).reward ?? 0).toFixed(1)}</b> LINK
+                            </span>
                           </span>
 
                           <div className="min-w-[120px] text-right text-xs text-gray-600">
@@ -1449,7 +1564,7 @@ export default function WordChains() {
       )}
 
       {/* Local styles for ice & active glow */}
-   <style jsx global>{`
+      <style jsx global>{`
   /* ===== active glow on category switch ===== */
   @keyframes wcPulse {
     0% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0.35); }
