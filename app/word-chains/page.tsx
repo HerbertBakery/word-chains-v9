@@ -932,23 +932,25 @@ const loseLife = (reason: string) => {
     }
 
     const w = raw;
+    const wl = w.toLowerCase();
     input.value = "";
 
-    if (used.has(w.toLowerCase())) { 
+    if (used.has(wl)) { 
       setMsg("Already used.");
       try { safePlay("used"); } catch {}
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
       return; 
     }
     if (last !== "start") {
-      if (firstLetter(w) !== lastLetter(last)) { 
-        try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-        loseLife(`Invalid: Must start with “${lastLetter(last)}”.`);
+      if (firstLetter(wl) !== lastLetter(last).toLowerCase()) {
+    try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
+        
+        loseLife(`Invalid: Must start with “${lastLetter(last).toLowerCase()}”.`);
         return;
       }
-      if (!w.toLowerCase().includes(firstLetter(last))) { 
+      if (!wl.includes(firstLetter(last).toLowerCase())) {
         try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-        loseLife(`Invalid: Must include “${firstLetter(last)}”.`);
+        loseLife(`Invalid: Must include “${firstLetter(last).toLowerCase()}”.`);
         return;
       }
     }
