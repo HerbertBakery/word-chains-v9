@@ -1194,6 +1194,124 @@ const loseLife = (reason: string) => {
     return { cur, need };
   };
 
+  // ===== Reusable powerups grid so desktop & mobile stay in sync =====
+const PowerupsGrid: React.FC = () => (
+  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+    {/* Countries → NUKE */}
+    {(() => { const p = powerProgress("country"); return (
+      <PowerRow
+        icon="💥"
+        label="NUKE"
+        info="Countries"
+        available={powerCharges.country}
+        onUse={() => usePower("country")}
+        fillClass={CHAIN_COLORS.country.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.country > 0}
+        ringClass="ring-purple-400"
+      />
+    );})()}
+
+    {/* Names → Freeze */}
+    {(() => { const p = powerProgress("name"); return (
+      <PowerRow
+        icon="❄️"
+        label="Freeze"
+        info="Names"
+        available={powerCharges.name}
+        onUse={() => usePower("name")}
+        fillClass={CHAIN_COLORS.name.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.name > 0}
+        ringClass="ring-blue-400"
+      />
+    );})()}
+
+    {/* Animals → Wild Surge */}
+    {(() => { const p = powerProgress("animal"); return (
+      <PowerRow
+        icon="🐾"
+        label="Wild Surge"
+        info="Animals"
+        available={powerCharges.animal}
+        onUse={() => usePower("animal")}
+        fillClass={CHAIN_COLORS.animal.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.animal > 0}
+        ringClass="ring-green-400"
+      />
+    );})()}
+
+    {/* Foods → Extra Life */}
+    {(() => { const p = powerProgress("food"); return (
+      <PowerRow
+        icon="🍔"
+        label="Extra Life"
+        info="Foods"
+        available={powerCharges.food}
+        onUse={() => usePower("food")}
+        fillClass={CHAIN_COLORS.food.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.food > 0}
+        ringClass="ring-amber-400"
+      />
+    );})()}
+
+    {/* Brands → Sponsor +50x */}
+    {(() => { const p = powerProgress("brand"); return (
+      <PowerRow
+        icon="💼"
+        label="Sponsor +50x"
+        info="Brands"
+        available={powerCharges.brand}
+        onUse={() => usePower("brand")}
+        fillClass={CHAIN_COLORS.brand.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.brand > 0}
+        ringClass="ring-rose-400"
+      />
+    );})()}
+
+    {/* TV/Movies → Montage */}
+    {(() => { const p = powerProgress("screen"); return (
+      <PowerRow
+        icon="🎬"
+        label="Montage"
+        info="TV/Movies"
+        available={powerCharges.screen}
+        onUse={() => usePower("screen")}
+        fillClass={CHAIN_COLORS.screen.solid}
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.screen > 0}
+        ringClass="ring-teal-400"
+      />
+    );})()}
+
+    {/* Same-Letter → Mirror Charm */}
+    {(() => { const p = powerProgress("same"); return (
+      <PowerRow
+        icon="🔁"
+        label="Mirror Charm"
+        info="Same-Letter"
+        available={powerCharges.same}
+        onUse={() => usePower("same")}
+        fillClass="bg-gray-300"
+        pct={(p.cur / p.need) * 100}
+        counter={`${p.cur}/${p.need}`}
+        ready={powerCharges.same > 0}
+        ringClass="ring-gray-400"
+      />
+    );})()}
+  </div>
+);
+
+
   /** ===================== Typing SFX (gentle throttle, non-blocking) ===================== */
   const lastTypeAt = useRef<number>(0);
   const onTypeKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1440,136 +1558,49 @@ const loseLife = (reason: string) => {
         )}
       </div>
 
-      {/* ===== Powerups Dock (sticky under the play area; only when game started) ===== */}
-      {started && dict && (
-        <div className="sticky bottom-2 z-40 mt-4">
-          <div className="mx-auto w-[min(100%,1000px)] px-3">
-            <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
-              <div className="px-3 py-2 flex items-center justify-between">
-                <div className="text-sm font-semibold">Powerups</div>
-                <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
-              </div>
-
-              {/* Wrap into rows, no side scroll */}
-              <div className="px-3 pb-3">
-                <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-                  {/* Countries → NUKE */}
-                  {(() => { const p = powerProgress("country"); return (
-                    <PowerRow
-                      icon="💥"
-                      label="NUKE"
-                      info="Countries"
-                      available={powerCharges.country}
-                      onUse={() => usePower("country")}
-                      fillClass={CHAIN_COLORS.country.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.country > 0}
-                      ringClass="ring-purple-400"
-                    />
-                  );})()}
-
-                  {/* Names → Freeze */}
-                  {(() => { const p = powerProgress("name"); return (
-                    <PowerRow
-                      icon="❄️"
-                      label="Freeze"
-                      info="Names"
-                      available={powerCharges.name}
-                      onUse={() => usePower("name")}
-                      fillClass={CHAIN_COLORS.name.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.name > 0}
-                      ringClass="ring-blue-400"
-                    />
-                  );})()}
-
-                  {/* Animals → Wild Surge */}
-                  {(() => { const p = powerProgress("animal"); return (
-                    <PowerRow
-                      icon="🐾"
-                      label="Wild Surge"
-                      info="Animals"
-                      available={powerCharges.animal}
-                      onUse={() => usePower("animal")}
-                      fillClass={CHAIN_COLORS.animal.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.animal > 0}
-                      ringClass="ring-green-400"
-                    />
-                  );})()}
-
-                  {/* Foods → Extra Life */}
-                  {(() => { const p = powerProgress("food"); return (
-                    <PowerRow
-                      icon="🍔"
-                      label="Extra Life"
-                      info="Foods"
-                      available={powerCharges.food}
-                      onUse={() => usePower("food")}
-                      fillClass={CHAIN_COLORS.food.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.food > 0}
-                      ringClass="ring-amber-400"
-                    />
-                  );})()}
-
-                  {/* Brands → Sponsor +50x */}
-                  {(() => { const p = powerProgress("brand"); return (
-                    <PowerRow
-                      icon="💼"
-                      label="Sponsor +50x"
-                      info="Brands"
-                      available={powerCharges.brand}
-                      onUse={() => usePower("brand")}
-                      fillClass={CHAIN_COLORS.brand.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.brand > 0}
-                      ringClass="ring-rose-400"
-                    />
-                  );})()}
-
-                  {/* TV/Movies → Montage */}
-                  {(() => { const p = powerProgress("screen"); return (
-                    <PowerRow
-                      icon="🎬"
-                      label="Montage"
-                      info="TV/Movies"
-                      available={powerCharges.screen}
-                      onUse={() => usePower("screen")}
-                      fillClass={CHAIN_COLORS.screen.solid}
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.screen > 0}
-                      ringClass="ring-teal-400"
-                    />
-                  );})()}
-
-                  {/* Same-Letter → Mirror Charm */}
-                  {(() => { const p = powerProgress("same"); return (
-                    <PowerRow
-                      icon="🔁"
-                      label="Mirror Charm"
-                      info="Same-Letter"
-                      available={powerCharges.same}
-                      onUse={() => usePower("same")}
-                      fillClass="bg-gray-300"
-                      pct={(p.cur / p.need) * 100}
-                      counter={`${p.cur}/${p.need}`}
-                      ready={powerCharges.same > 0}
-                      ringClass="ring-gray-400"
-                    />
-                  );})()}
-                </div>
-              </div>
-            </div>
+      {/* ===== Powerups Dock: fixed on mobile (safe-area), sticky on md+ ===== */}
+{started && dict && (
+  <>
+    {/* Mobile: fixed dock */}
+    <div
+      className="fixed bottom-0 left-0 right-0 z-40 md:hidden"
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
+      role="toolbar"
+      aria-label="Powerups"
+    >
+      <div className="mx-auto w-full max-w-[1000px] px-3 pb-2 pt-2">
+        <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+          <div className="px-3 py-2 flex items-center justify-between">
+            <div className="text-sm font-semibold">Powerups</div>
+            <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+          </div>
+          <div className="px-3 pb-3">
+            <PowerupsGrid />
           </div>
         </div>
-      )}
+      </div>
+    </div>
+
+    {/* Spacer so mobile content isn't hidden behind the dock */}
+    <div className="h-[92px] md:hidden" />
+
+    {/* Desktop/Tablet: original sticky presentation */}
+    <div className="hidden md:block sticky bottom-2 z-40 mt-4">
+      <div className="mx-auto w-[min(100%,1000px)] px-3">
+        <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+          <div className="px-3 py-2 flex items-center justify-between">
+            <div className="text-sm font-semibold">Powerups</div>
+            <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+          </div>
+          <div className="px-3 pb-3">
+            <PowerupsGrid />
+          </div>
+        </div>
+      </div>
+    </div>
+  </>
+)}
+
 
       {/* Local styles for ice & active glow */}
       <style jsx global>{`
