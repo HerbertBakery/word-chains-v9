@@ -105,13 +105,10 @@ async function postRunToLeaderboard(summary: {
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
-  // SFX hook (prod-safe): some builds expose only { play, isUnlocked }.
-// We polyfill a no-op stop() if it's missing so calls like stop("warning") don't break.
-const sound = useSound();
-const play = sound.play;
-const stop: (...args: any[]) => void =
-  (sound as any).stop?.bind(sound) ?? ((..._args: any[]) => {});
-
+  const sound = useSound();
+  const play = sound.play;
+  const stop: (...args: any[]) => void =
+    (sound as any).stop?.bind(sound) ?? ((..._args: any[]) => {});
 
   const vfx = useVFX();
   const inputDomRef = useRef<HTMLInputElement>(null);
@@ -120,12 +117,8 @@ const stop: (...args: any[]) => void =
   const warningPlayingRef = useRef(false);            // track heartbeat state
 
   // Latches that mirror started/paused without stale closures.
-  // (We sync these AFTER the state variables are declared.)
   const startedRef = useRef(false);
   const pausedRef  = useRef(false);
-
-  
-
 
   // ---- SAFARI-SAFE, NON-BLOCKING SOUND WRAPPER (surgical) ----
   const safePlay = useCallback(
@@ -133,7 +126,6 @@ const stop: (...args: any[]) => void =
       // If Safari/iOS hasn't unlocked audio yet, skip typing sfx to avoid first-key freeze
       if (key === "typing" && typeof window !== "undefined" && !(window as any).__sfx_unlocked) return;
       try {
-        // Defer to next frame so we never block key events
         requestAnimationFrame(() => {
           try { play(key as any, opts); } catch {}
         });
@@ -219,24 +211,24 @@ const stop: (...args: any[]) => void =
       });
     })();
   }, []);
-/** ===================== Core game state ===================== */
-const [started, setStarted] = useState(false);
-const [paused, setPaused] = useState(false);
 
-// keep refs in sync with latest state
-useEffect(() => { startedRef.current = started; }, [started]);
-useEffect(() => { pausedRef.current  = paused;  }, [paused]);
+  /** ===================== Core game state ===================== */
+  const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
 
-const [last, setLast] = useState<string>("start");
-const [used, setUsed] = useState<Set<string>>(new Set());
-const [recent, setRecent] = useState<string[]>([]);
-const [score, setScore] = useState(0);
-const [links, setLinks] = useState(0);
-const [lives, setLives] = useState(3);
-const [timeLeft, setTimeLeft] = useState(30);
-const [msg, setMsg] = useState("");
-const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // keep refs in sync with latest state
+  useEffect(() => { startedRef.current = started; }, [started]);
+  useEffect(() => { pausedRef.current  = paused;  }, [paused]);
 
+  const [last, setLast] = useState<string>("start");
+  const [used, setUsed] = useState<Set<string>>(new Set());
+  const [recent, setRecent] = useState<string[]>([]);
+  const [score, setScore] = useState(0);
+  const [links, setLinks] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [msg, setMsg] = useState("");
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Post game
   const [showNamePrompt, setShowNamePrompt] = useState(false);
@@ -257,7 +249,7 @@ const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     switches: number;
     linksEarned: number;
     linksSpent: number;
-    // optional enriched fields (we will fill these at endGame as fallbacks)
+    // optional enriched fields
     highestMultiplier?: number;
     longestChain?: number;
     uniqueWords?: number;
@@ -290,7 +282,6 @@ const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   });
 
   /** ===================== Multiplier (with completion x10 bonuses) ===================== */
-  /** ===================== Multiplier (ADD +10 per completed section) ===================== */
   const [completedTracks, setCompletedTracks] = useState<Set<ChainKeyOrMain>>(new Set());
 
   const totalMultData = useMemo(() => {
@@ -317,22 +308,21 @@ const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const totalMult = totalMultData.total;
 
   /** ===================== Run analytics for stats page KPIs ===================== */
-  const lastAcceptAtRef = useRef<number | null>(null); // last accepted word time
-  const deltasRef = useRef<number[]>([]);              // ms gaps between accepted words (per run)
-  const peakTotalMultRef = useRef<number>(1);          // peak effective multiplier this run
-  const currentChainRef = useRef<number>(0);           // uninterrupted valid-word chain (any)
-  const maxChainRef = useRef<number>(0);               // longest chain this run
+  const lastAcceptAtRef = useRef<number | null>(null);
+  const deltasRef = useRef<number[]>([]);
+  const peakTotalMultRef = useRef<number>(1);
+  const currentChainRef = useRef<number>(0);
+  const maxChainRef = useRef<number>(0);
 
   /** ===================== Power thresholds & state ===================== */
-  // thresholds per power (unique words needed per charge)
   const POWER_THRESHOLDS: Record<PowerKey, number> = {
-    name: 10,      // Names → Freeze until next valid answer
-    animal: 10,    // Animals → +20x surge (until multiplier lost)
-    country: 10,   // Countries → NUKE
-    food: 5,       // Foods → +1 life (max 5)
-    brand: 5,      // Brands → +50x next word only
-    screen: 10,    // TV/Movies → freeze 15s
-    same: 10,      // Same-letter → +10x next word only
+    name: 10,
+    animal: 10,
+    country: 10,
+    food: 5,
+    brand: 5,
+    screen: 10,
+    same: 10,
   };
 
   /** ===================== Category detection ===================== */
@@ -361,85 +351,65 @@ const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [prevCats, setPrevCats] = useState<Set<ChainKey>>(new Set());
 
   /** ===================== Timer ===================== */
-useEffect(() => {
-  if (!started || paused) return;
-  if (timerRef.current) clearInterval(timerRef.current);
-  timerRef.current = setInterval(
-    () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
-    1000
-  );
-  return () => {
+  useEffect(() => {
+    if (!started || paused) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [started, paused]);
+
+  useEffect(() => {
+    if (!started) return;                 // only care while game is running
+    if (timeLeft !== 0) {
+      timeoutLatchRef.current = false;
+      return;
+    }
+    if (timeoutLatchRef.current) return;
+    timeoutLatchRef.current = true;
+
+    try { (stop as any)("warning"); } catch {}
+    warningPlayingRef.current = false;
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  };
-}, [started, paused]);
 
+    loseLife("Time's up!");
+
+    setTimeout(() => {
+      if (!startedRef.current) return;
+      setTimeLeft(30);
+      if (!pausedRef.current) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
+      }
+      timeoutLatchRef.current = false;
+    }, 0);
+  }, [timeLeft, started, stop]);
+
+  /* ===== Low-timer warning SFX (looping, single instance) ===== */
   useEffect(() => {
-  if (!started) return;                 // only care while game is running
+    const inDanger = started && !paused && timeLeft > 0 && timeLeft <= 5;
 
-  // If not at exactly 0, clear the latch and exit
-  if (timeLeft !== 0) {
-    timeoutLatchRef.current = false;
-    return;
-  }
-
-  // At 0 → ensure we only fire once
-  if (timeoutLatchRef.current) return;
-  timeoutLatchRef.current = true;
-
-  // Stop heartbeat immediately at 0
-  try { (stop as any)("warning"); } catch {}
-  warningPlayingRef.current = false;
-
-  // Stop the ticking interval; we’ll reset/restart below (if still running)
-  if (timerRef.current) {
-    clearInterval(timerRef.current);
-    timerRef.current = null;
-  }
-
-  // Deduct exactly one life (your loseLife plays SFX unless it's final)
-  loseLife("Time's up!");
-
-  // If the run is still alive after losing a life, reset the clock to 30 and resume ticking
-  // Use refs to avoid stale values on this microtask turn.
-  setTimeout(() => {
-    if (!startedRef.current) return;    // endGame may have run
-    setTimeLeft(30);
-    if (!pausedRef.current) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(
-        () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
-        1000
-      );
+    if (inDanger && !warningPlayingRef.current) {
+      try { (play as any)("warning", { loop: true, volume: 0.5 }); warningPlayingRef.current = true; } catch {}
     }
-    // allow future timeouts
-    timeoutLatchRef.current = false;
-  }, 0);
-}, [timeLeft, started, stop]);
 
-
-
-
- /* ===== Low-timer warning SFX (looping, single instance) ===== */
-useEffect(() => {
-  const inDanger = started && !paused && timeLeft > 0 && timeLeft <= 5;
-
-  if (inDanger && !warningPlayingRef.current) {
-    try { (play as any)("warning", { loop: true, volume: 0.5 }); warningPlayingRef.current = true; } catch {}
-  }
-
-  if (!inDanger && warningPlayingRef.current) {
-    try { (stop as any)("warning"); } catch {}
-    warningPlayingRef.current = false;
-  }
-}, [timeLeft, started, paused, play, stop]);
-
+    if (!inDanger && warningPlayingRef.current) {
+      try { (stop as any)("warning"); } catch {}
+      warningPlayingRef.current = false;
+    }
+  }, [timeLeft, started, paused, play, stop]);
 
   // Additive multiplier bonuses
-  const [nextWordAddBonus, setNextWordAddBonus] = useState(0); // e.g., +50x or +10x next word
-  const [surgeActive, setSurgeActive] = useState(false);       // +20x until multiplier is lost
+  const [nextWordAddBonus, setNextWordAddBonus] = useState(0);
+  const [surgeActive, setSurgeActive] = useState(false);
 
   // Freeze-until-next-answer (Names)
   const [pauseUntilAnswer, setPauseUntilAnswer] = useState(false);
@@ -452,59 +422,47 @@ useEffect(() => {
     if (eff > peakTotalMultRef.current) peakTotalMultRef.current = eff;
   }, [totalMult, surgeActive, nextWordAddBonus]);
 
-  // (Optional) tighter "lifeLost" playback that skips tiny leading silence (~60ms)
-// If you already added this earlier, keep your existing helper and skip this one.
-const playLifeLostTight = () => {
-  const off = 0.06; // 60ms
-  try { (play as any)("lifeLost", { seek: off, offset: off, startAt: off }); }
-  catch { try { (play as any)("lifeLost"); } catch {} }
-};
+  const playLifeLostTight = () => {
+    const off = 0.06; // 60ms
+    try { (play as any)("lifeLost", { seek: off, offset: off, startAt: off }); }
+    catch { try { (play as any)("lifeLost"); } catch {} }
+  };
 
-// Lose a life and handle game-over if no lives left
-const loseLife = (reason: string) => {
-  setLives((l) => {
-    const next = l - 1;
+  // Lose a life and handle game-over if no lives left
+  const loseLife = (reason: string) => {
+    setLives((l) => {
+      const next = l - 1;
 
-    // Always stop the heartbeat as soon as a life is lost
-    try { (stop as any)("warning"); } catch {}
-    if (typeof warningPlayingRef !== "undefined") warningPlayingRef.current = false;
+      try { (stop as any)("warning"); } catch {}
+      if (typeof warningPlayingRef !== "undefined") warningPlayingRef.current = false;
 
-    if (next <= 0) {
-      // FINAL life: do NOT play the "lifeLost" sound; go straight to game over SFX via endGame
-      endGame(reason);
-      return 0;
-    }
+      if (next <= 0) {
+        endGame(reason);
+        return 0;
+      }
 
-    // Non-final life: play the lose-life sound, show message, and shake the score
-    setMsg(`${reason} (-1 life)`);
-    try { playLifeLostTight(); } catch { try { (play as any)("lifeLost"); } catch {} }
-    try { vfx.shake("#score", 400); } catch {}
+      setMsg(`${reason} (-1 life)`);
+      try { playLifeLostTight(); } catch { try { (play as any)("lifeLost"); } catch {} }
+      try { vfx.shake("#score", 400); } catch {}
 
-    return next;
-  });
-};
+      return next;
+    });
+  };
 
-
-  // REPLACE your existing endGame with this:
   const endGame = async (reason: string) => {
     setStarted(false);
     setMsg(`Game over: ${reason}`);
     setFinalScore(score);
 
-    // ensure heartbeat is killed on game end
     try { stop("warning"); } catch {}
     warningPlayingRef.current = false;
 
-    // sfx
     try { safePlay("gameover"); } catch {}
 
-    // Compute per-run avg speed (ms/word)
     const gaps = deltasRef.current;
     const perRunAvgMs = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
 
-    // ----- Local analytics stores (used by stats page) -----
     try {
-      // 1) per-run speed list
       const speeds = JSON.parse(localStorage.getItem("wc_session_speeds") || "[]");
       const speedsArr = Array.isArray(speeds) ? speeds : [];
       if (perRunAvgMs != null && isFinite(perRunAvgMs) && perRunAvgMs > 0) {
@@ -512,36 +470,28 @@ const loseLife = (reason: string) => {
       }
       localStorage.setItem("wc_session_speeds", JSON.stringify(speedsArr));
 
-      // 2) session counter
       const prevSessions = Number(localStorage.getItem("wc_total_sessions") || "0") || 0;
       localStorage.setItem("wc_total_sessions", String(prevSessions + 1));
 
-      // 3) peak effective multiplier for this run (already tracking effects)
       const peaks = JSON.parse(localStorage.getItem("wc_peak_multipliers") || "[]");
       const peaksArr = Array.isArray(peaks) ? peaks : [];
       const peakThisRun = Number(peakTotalMultRef.current) || 1;
       peaksArr.push(peakThisRun);
       localStorage.setItem("wc_peak_multipliers", JSON.stringify(peaksArr));
-    } catch { /* ignore */ }
+    } catch {}
 
-    // Derive run-level fallbacks
     const uniqueWordsThisRun = used.size;
     const longestChainThisRun = maxChainRef.current || 0;
     const highestMultThisRun = Number((peakTotalMultRef.current || 1).toFixed(2));
 
-    // ----- Merge with previous local all-time to preserve "records" -----
     let prevLocal: any = {};
     try { prevLocal = JSON.parse(localStorage.getItem("wc_stats") || "{}") || {}; } catch {}
 
     const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-
-    const sessionsNow = num(localStorage.getItem("wc_total_sessions")); // already incremented above
+    const sessionsNow = num(localStorage.getItem("wc_total_sessions"));
 
     const mergedAllTime = {
-      // keep any extra fields that may exist
       ...prevLocal,
-
-      // -------- accumulators (add) --------
       totalWords:        num(prevLocal.totalWords)        + num(stats.totalWords),
       animals:           num(prevLocal.animals)           + num(stats.animals),
       countries:         num(prevLocal.countries)         + num(stats.countries),
@@ -550,24 +500,18 @@ const loseLife = (reason: string) => {
       switches:          num(prevLocal.switches)          + num(stats.switches),
       linksEarned:       num(prevLocal.linksEarned)       + num(stats.linksEarned),
       linksSpent:        num(prevLocal.linksSpent)        + num(stats.linksSpent),
-
-      // -------- records (max) --------
       highestWordScore:    Math.max(num(prevLocal.highestWordScore),    num(stats.highestWordScore)),
       longestAnimalStreak: Math.max(num(prevLocal.longestAnimalStreak), num(stats.longestAnimalStreak)),
       longestCountryStreak:Math.max(num(prevLocal.longestCountryStreak),num(stats.longestCountryStreak)),
       longestNameStreak:   Math.max(num(prevLocal.longestNameStreak),   num(stats.longestNameStreak)),
       longestChain:        Math.max(num(prevLocal.longestChain),         num(longestChainThisRun), num(stats.longestChain)),
       highestMultiplier:   Math.max(num(prevLocal.highestMultiplier),    num(highestMultThisRun)),
-
-      // -------- session/unique (best-effort) --------
       totalSessions: sessionsNow,
       uniqueWords:   Math.max(num(prevLocal.uniqueWords), num(uniqueWordsThisRun)),
     };
 
-    // Persist local all-time for the stats page if server data isn't available
     persistStats(mergedAllTime);
 
-    // Send per-run summary to server (if signed in)
     const summary = {
       bestScore: Number(score) || 0,
       longestChain: Number(longestChainThisRun || 0),
@@ -630,37 +574,21 @@ const loseLife = (reason: string) => {
     | { id: string; owner: "main"; chain: "main"; kind: Exclude<MissionKindMain, "sequence">; target: number; progress: number; reward: number }
     | { id: string; owner: "main"; chain: "main"; kind: "sequence"; sequence: ChainKey[]; progress: number; reward: number };
 
-  // 7 missions per category; 7 for main
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
     const R = 1;
     return [
-      // 1) Enter the category once
       { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
-
-      // 2) Chain two in a row
       { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
-
-      // 3) Reach category multiplier x2.00
       { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
-
-      // 4) Score >= 500 with a word in this category
       { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 500, progress: 0, reward: R },
-
-      // 5) Chain three in a row
       { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
-
-      // 6) Reach category multiplier x4.00
       { id: newId(), owner: chain, chain, kind: "reachMult",  target: 4.0, progress: 0, reward: R },
-
-      // 7) Score >= 2000 with a word in this category
       { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 2000, progress: 0, reward: R },
     ];
   };
 
   const buildMainTrack = (): Mission[] => {
     const R = 1;
-
-    // NOTE: "small letter" interpreted as "same-letter".
     return [
       { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 250,  progress: 0, reward: R },
       { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 1000, progress: 0, reward: R },
@@ -682,19 +610,16 @@ const loseLife = (reason: string) => {
     screen: buildCategoryTrack("screen"),
   }), []);
 
-  // Current mission index per owner (0..5)
   const [missionIndex, setMissionIndex] = useState<Record<ChainKeyOrMain, number>>({
     main: 0, name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0
   });
 
-  // Unlocked tracks (start with only main)
   const allCategories: ChainKey[] = ["name","animal","country","food","brand","screen"];
   const [unlocked, setUnlocked] = useState<Set<ChainKeyOrMain>>(new Set<ChainKeyOrMain>(["main"]));
   const [unlockOrder, setUnlockOrder] = useState<ChainKeyOrMain[]>(["main"]);
   const lockedCategories = useMemo(() => allCategories.filter((c) => !unlocked.has(c)), [unlocked]);
 
-  // Track mission progress for the *current* mission of each owner
-  const [missionProgress, setMissionProgress] = useState<Record<string, number>>({}); // key by mission.id
+  const [missionProgress, setMissionProgress] = useState<Record<string, number>>({});
   const currentMissions = useMemo(() => {
     const list: Mission[] = [];
     unlocked.forEach((owner) => {
@@ -705,7 +630,6 @@ const loseLife = (reason: string) => {
     return list;
   }, [unlocked, missionIndex, missionTracks]);
 
-  // Completed mission ids (to pay rewards only once)
   const [completedMissionIds, setCompletedMissionIds] = useState<Set<string>>(new Set());
 
   /** ===================== Unlock helpers ===================== */
@@ -717,7 +641,6 @@ const loseLife = (reason: string) => {
     });
     setUnlockOrder((o) => [...o, owner]);
     setMsg(`New category unlocked: ${CHAIN_COLORS[owner].label}!`);
-    // SFX + subtle confetti
     try { safePlay("unlock"); } catch {}
     try { vfx.confettiBurst({ power: 0.8 }); } catch {}
   };
@@ -737,12 +660,10 @@ const loseLife = (reason: string) => {
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
   });
 
-  // NEW: thresholds already credited (prevents double-charging)
   const [powerBucketsCredited, setPowerBucketsCredited] = useState<Record<PowerKey, number>>({
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
   });
 
-  // Unique word sets per category and same-letter
   const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
     name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
   });
@@ -755,7 +676,7 @@ const loseLife = (reason: string) => {
 
     setUniqueSeen((cur) => {
       const prevSet = cur[key] ?? new Set<string>();
-      if (prevSet.has(wNorm)) return cur; // no double credit
+      if (prevSet.has(wNorm)) return cur;
 
       const prevCount = prevSet.size;
       const nextSet = new Set(prevSet);
@@ -769,14 +690,12 @@ const loseLife = (reason: string) => {
         const delta = newBuckets - prevBuckets;
         if (delta > 0) {
           setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
-          // +0.5 LINK per bucket
           setLinks((x) => {
             const nx = Math.round((x + 0.5 * delta) * 2) / 2;
             setStats((s) => ({ ...s, linksEarned: s.linksEarned + 0.5 * delta }));
             return nx;
           });
           setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label} (+0.5 LINK)`);
-          // SFX/VFX for "ready" + coin
           try { safePlay("coin"); } catch {}
           try { safePlay(`power_${key}_ready` as any); } catch {}
           try { vfx.ringBurstAtFromEl(inputDomRef.current || "input[name='word']"); } catch {}
@@ -793,14 +712,12 @@ const loseLife = (reason: string) => {
     setPowerCharges((ch) => {
       if ((ch[key] ?? 0) <= 0) return ch;
       const next = { ...ch, [key]: ch[key] - 1 };
-      // SFX for use
       try { safePlay(`power_${key}_use` as any); } catch {}
 
       if (key === "country") {
         setUsed(new Set());
         setMsg("NUKE deployed: you may reuse any previous word.");
       } else if (key === "name") {
-        // Freeze until next valid answer
         setPauseUntilAnswer(true);
         setPaused(true);
         setMsg("Timer frozen until your next valid word!");
@@ -863,7 +780,6 @@ const loseLife = (reason: string) => {
     });
     setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
 
-    // reset run analytics
     lastAcceptAtRef.current = null;
     deltasRef.current = [];
     peakTotalMultRef.current = 1;
@@ -892,7 +808,7 @@ const loseLife = (reason: string) => {
     return next;
   };
 
-  /** ===================== Validation ===================== */
+  /** ===================== Validation & Submit ===================== */
   async function validateWord(w: string): Promise<boolean> {
     if (!INPUT_RE.test(w)) return false;
     if (!strictDictionary) return true;
@@ -914,14 +830,12 @@ const loseLife = (reason: string) => {
     return false;
   }
 
-  /** ===================== Submit ===================== */
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const input = (e.target as HTMLFormElement).word as unknown as HTMLInputElement;
     const raw = (input?.value || "").trim();
     if (!raw) return;
 
-    // debug: "?word"
     if (raw.startsWith("?")) {
       const test = raw.slice(1);
       const cats = Array.from(getCategories(test));
@@ -935,16 +849,15 @@ const loseLife = (reason: string) => {
     const wl = w.toLowerCase();
     input.value = "";
 
-    if (used.has(wl)) { 
+    if (used.has(wl)) {
       setMsg("Already used.");
       try { safePlay("used"); } catch {}
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-      return; 
+      return;
     }
     if (last !== "start") {
       if (firstLetter(wl) !== lastLetter(last).toLowerCase()) {
-    try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-        
+        try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
         loseLife(`Invalid: Must start with “${lastLetter(last).toLowerCase()}”.`);
         return;
       }
@@ -955,35 +868,31 @@ const loseLife = (reason: string) => {
       }
     }
     const ok = await validateWord(w);
-    if (!ok) { 
+    if (!ok) {
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
       loseLife("Invalid: Not an official word.");
       return;
     }
 
-    // if we were frozen until next answer, release it now
     if (pauseUntilAnswer) {
       setPauseUntilAnswer(false);
       setPaused(false);
     }
 
-    // === timing: average ms/word for this run ===
     const now = Date.now();
     if (lastAcceptAtRef.current != null) {
       const dt = now - lastAcceptAtRef.current;
       if (Number.isFinite(dt) && dt > 0 && dt < 10 * 60 * 1000) {
-        deltasRef.current.push(dt); // cap 10 min to ignore AFK
+        deltasRef.current.push(dt);
       }
     }
     lastAcceptAtRef.current = now;
 
-    // === uninterrupted chain across ANY category ===
     currentChainRef.current += 1;
     if (currentChainRef.current > maxChainRef.current) {
       maxChainRef.current = currentChainRef.current;
     }
 
-    // same-letter & unique credit
     const sameLetter = w[0].toLowerCase() === w[w.length - 1].toLowerCase();
     if (sameLetter) {
       setSameMult((s) => 1 + (s - 1) + SAME_LETTER_GROWTH);
@@ -996,13 +905,12 @@ const loseLife = (reason: string) => {
     enteringCats.forEach((k) => {
       const c = next[k];
       next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH), frozen: false };
-      tryGrantChargeUnique(k, w); // unique per category
+      tryGrantChargeUnique(k, w);
     });
     next = applySwitching(enteringCats, next);
     setChains(next);
-    setPrevCats(enteringCats); // used to highlight active chain rows
+    setPrevCats(enteringCats);
 
-    // scoring
     const catsArr = Array.from(enteringCats);
     const base = catsArr.length ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1)) : CHAIN_BASE.normal;
 
@@ -1016,10 +924,8 @@ const loseLife = (reason: string) => {
       }${surgeActive ? " · +20x surge" : ""})`
     );
 
-    // accept sfx + subtle ring/glow at input
     try { safePlay("accept"); } catch {}
 
-    // HARD stop the heartbeat immediately on a correct word
     try { stop("warning"); } catch {}
     warningPlayingRef.current = false;
     lowWarnTickRef.current = null;
@@ -1035,7 +941,6 @@ const loseLife = (reason: string) => {
       }
     } catch {}
 
-    // big single-word score celebration (>=2000)
     if (gained >= 2000) {
       try { safePlay("bigword"); } catch {}
       try { vfx.confettiBurst({ power: 2 }); } catch {}
@@ -1044,7 +949,6 @@ const loseLife = (reason: string) => {
 
     if (nextWordAddBonus !== 0) setNextWordAddBonus(0);
 
-    // stats (records & per-category streaks)
     setStats((s) => {
       const upd: Stats = { ...s, totalWords: s.totalWords + 1, highestWordScore: Math.max(s.highestWordScore, gained) };
       if (enteringCats.has("animal")) { upd.animals = s.animals + 1; upd.longestAnimalStreak = Math.max(s.longestAnimalStreak, next.animal.length); }
@@ -1053,13 +957,11 @@ const loseLife = (reason: string) => {
       return upd;
     });
 
-    // bookkeeping
     setUsed((u) => new Set(u).add(w.toLowerCase()));
     setRecent((r) => [w, ...r].slice(0, 30));
     setLast(w);
     setTimeLeft(30);
 
-    /** ===== Progress the current missions only ===== */
     setMissionProgress((mp) => {
       const nx = { ...mp };
       currentMissions.forEach((m) => {
@@ -1106,7 +1008,6 @@ const loseLife = (reason: string) => {
     });
     if (!justFinished.length) return;
 
-    // Sum the rewards on the finished missions (now 1.0 each)
     const addLinks = justFinished.reduce((sum, m) => sum + (Number((m as any).reward) || 0), 0);
 
     if (addLinks > 0) {
@@ -1115,13 +1016,9 @@ const loseLife = (reason: string) => {
         setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks }));
         return nx;
       });
-
-      // Friendly formatting + pluralization
       const amt = addLinks.toFixed(1);
       const plural = Math.abs(addLinks - 1) < 1e-9 ? "" : "s";
       setMsg(`Mission complete! +${amt} LINK${plural}`);
-
-      // SFX/VFX for mission complete + coin (still plays on any amount, 0.5 or 1)
       try { safePlay("mission"); } catch {}
       try { safePlay("coin"); } catch {}
       try { vfx.confettiBurst({ power: 1.2 }); } catch {}
@@ -1195,128 +1092,63 @@ const loseLife = (reason: string) => {
   };
 
   // ===== Reusable powerups grid so desktop & mobile stay in sync =====
-const PowerupsGrid: React.FC = () => (
-  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-    {/* Countries → NUKE */}
-    {(() => { const p = powerProgress("country"); return (
-      <PowerRow
-        icon="💥"
-        label="NUKE"
-        info="Countries"
-        available={powerCharges.country}
-        onUse={() => usePower("country")}
-        fillClass={CHAIN_COLORS.country.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.country > 0}
-        ringClass="ring-purple-400"
-      />
-    );})()}
-
-    {/* Names → Freeze */}
-    {(() => { const p = powerProgress("name"); return (
-      <PowerRow
-        icon="❄️"
-        label="Freeze"
-        info="Names"
-        available={powerCharges.name}
-        onUse={() => usePower("name")}
-        fillClass={CHAIN_COLORS.name.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.name > 0}
-        ringClass="ring-blue-400"
-      />
-    );})()}
-
-    {/* Animals → Wild Surge */}
-    {(() => { const p = powerProgress("animal"); return (
-      <PowerRow
-        icon="🐾"
-        label="Wild Surge"
-        info="Animals"
-        available={powerCharges.animal}
-        onUse={() => usePower("animal")}
-        fillClass={CHAIN_COLORS.animal.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.animal > 0}
-        ringClass="ring-green-400"
-      />
-    );})()}
-
-    {/* Foods → Extra Life */}
-    {(() => { const p = powerProgress("food"); return (
-      <PowerRow
-        icon="🍔"
-        label="Extra Life"
-        info="Foods"
-        available={powerCharges.food}
-        onUse={() => usePower("food")}
-        fillClass={CHAIN_COLORS.food.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.food > 0}
-        ringClass="ring-amber-400"
-      />
-    );})()}
-
-    {/* Brands → Sponsor +50x */}
-    {(() => { const p = powerProgress("brand"); return (
-      <PowerRow
-        icon="💼"
-        label="Sponsor +50x"
-        info="Brands"
-        available={powerCharges.brand}
-        onUse={() => usePower("brand")}
-        fillClass={CHAIN_COLORS.brand.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.brand > 0}
-        ringClass="ring-rose-400"
-      />
-    );})()}
-
-    {/* TV/Movies → Montage */}
-    {(() => { const p = powerProgress("screen"); return (
-      <PowerRow
-        icon="🎬"
-        label="Montage"
-        info="TV/Movies"
-        available={powerCharges.screen}
-        onUse={() => usePower("screen")}
-        fillClass={CHAIN_COLORS.screen.solid}
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.screen > 0}
-        ringClass="ring-teal-400"
-      />
-    );})()}
-
-    {/* Same-Letter → Mirror Charm */}
-    {(() => { const p = powerProgress("same"); return (
-      <PowerRow
-        icon="🔁"
-        label="Mirror Charm"
-        info="Same-Letter"
-        available={powerCharges.same}
-        onUse={() => usePower("same")}
-        fillClass="bg-gray-300"
-        pct={(p.cur / p.need) * 100}
-        counter={`${p.cur}/${p.need}`}
-        ready={powerCharges.same > 0}
-        ringClass="ring-gray-400"
-      />
-    );})()}
-  </div>
-);
-
-
+  const PowerupsGrid: React.FC = () => (
+    <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+      {(() => { const p = powerProgress("country"); return (
+        <PowerRow icon="💥" label="NUKE" info="Countries"
+          available={powerCharges.country} onUse={() => usePower("country")}
+          fillClass={CHAIN_COLORS.country.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.country > 0}
+          ringClass="ring-purple-400" />
+      );})()}
+      {(() => { const p = powerProgress("name"); return (
+        <PowerRow icon="❄️" label="Freeze" info="Names"
+          available={powerCharges.name} onUse={() => usePower("name")}
+          fillClass={CHAIN_COLORS.name.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.name > 0}
+          ringClass="ring-blue-400" />
+      );})()}
+      {(() => { const p = powerProgress("animal"); return (
+        <PowerRow icon="🐾" label="Wild Surge" info="Animals"
+          available={powerCharges.animal} onUse={() => usePower("animal")}
+          fillClass={CHAIN_COLORS.animal.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.animal > 0}
+          ringClass="ring-green-400" />
+      );})()}
+      {(() => { const p = powerProgress("food"); return (
+        <PowerRow icon="🍔" label="Extra Life" info="Foods"
+          available={powerCharges.food} onUse={() => usePower("food")}
+          fillClass={CHAIN_COLORS.food.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.food > 0}
+          ringClass="ring-amber-400" />
+      );})()}
+      {(() => { const p = powerProgress("brand"); return (
+        <PowerRow icon="💼" label="Sponsor +50x" info="Brands"
+          available={powerCharges.brand} onUse={() => usePower("brand")}
+          fillClass={CHAIN_COLORS.brand.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.brand > 0}
+          ringClass="ring-rose-400" />
+      );})()}
+      {(() => { const p = powerProgress("screen"); return (
+        <PowerRow icon="🎬" label="Montage" info="TV/Movies"
+          available={powerCharges.screen} onUse={() => usePower("screen")}
+          fillClass={CHAIN_COLORS.screen.solid} pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.screen > 0}
+          ringClass="ring-teal-400" />
+      );})()}
+      {(() => { const p = powerProgress("same"); return (
+        <PowerRow icon="🔁" label="Mirror Charm" info="Same-Letter"
+          available={powerCharges.same} onUse={() => usePower("same")}
+          fillClass="bg-gray-300" pct={(p.cur / p.need) * 100}
+          counter={`${p.cur}/${p.need}`} ready={powerCharges.same > 0}
+          ringClass="ring-gray-400" />
+      );})()}
+    </div>
+  );
   /** ===================== Typing SFX (gentle throttle, non-blocking) ===================== */
   const lastTypeAt = useRef<number>(0);
   const onTypeKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Only for actual character keys
-    if (e.key.length !== 1) return;
+    if (e.key.length !== 1) return; // only real character keys
     const now = performance.now();
     if (now - lastTypeAt.current > 70) {
       safePlay("typing", { volume: 0.25 });
@@ -1497,7 +1329,6 @@ const PowerupsGrid: React.FC = () => (
                       : (m as any).target;
                     const bar = Math.min(100, (Number(progressCurrent) / Number(target)) * 100);
 
-                    // pretty display for counters (clamp decimals for reachMult)
                     const displayCurrent = isReachMult ? Number(progressCurrent).toFixed(2) : String(progressCurrent);
                     const displayTarget  = isReachMult ? Number(target).toFixed(2) : String(target);
 
@@ -1544,7 +1375,6 @@ const PowerupsGrid: React.FC = () => (
                     );
                   })}
 
-                  {/* Locked hint */}
                   {lockedCategories.length > 0 && (
                     <div className="text-xs text-gray-600">
                       <b>{lockedCategories.length}</b> categor{lockedCategories.length === 1 ? "y is" : "ies are"} locked — finish the Level 1 mission of the latest unlocked category to reveal the next.
@@ -1553,167 +1383,148 @@ const PowerupsGrid: React.FC = () => (
                 </div>
               </div>
             </div>
-            {/* end started=true block */}
           </>
         )}
       </div>
 
       {/* ===== Powerups Dock: fixed on mobile (safe-area), sticky on md+ ===== */}
-{started && dict && (
-  <>
-    {/* Mobile: fixed dock */}
-    <div
-      className="fixed bottom-0 left-0 right-0 z-40 md:hidden"
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
-      role="toolbar"
-      aria-label="Powerups"
-    >
-      <div className="mx-auto w-full max-w-[1000px] px-3 pb-2 pt-2">
-        <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
-          <div className="px-3 py-2 flex items-center justify-between">
-            <div className="text-sm font-semibold">Powerups</div>
-            <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+      {started && dict && (
+        <>
+          {/* Mobile: fixed dock */}
+          <div
+            className="fixed bottom-0 left-0 right-0 z-40 md:hidden"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
+            role="toolbar"
+            aria-label="Powerups"
+          >
+            <div className="mx-auto w-full max-w-[1000px] px-3 pb-2 pt-2">
+              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+                <div className="px-3 py-2 flex items-center justify-between">
+                  <div className="text-sm font-semibold">Powerups</div>
+                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+                </div>
+                <div className="px-3 pb-3">
+                  <PowerupsGrid />
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="px-3 pb-3">
-            <PowerupsGrid />
-          </div>
-        </div>
-      </div>
-    </div>
 
-    {/* Spacer so mobile content isn't hidden behind the dock */}
-    <div className="h-[92px] md:hidden" />
+          {/* Spacer so mobile content isn't hidden behind the dock */}
+          <div className="h-[92px] md:hidden" />
 
-    {/* Desktop/Tablet: original sticky presentation */}
-    <div className="hidden md:block sticky bottom-2 z-40 mt-4">
-      <div className="mx-auto w-[min(100%,1000px)] px-3">
-        <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
-          <div className="px-3 py-2 flex items-center justify-between">
-            <div className="text-sm font-semibold">Powerups</div>
-            <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+          {/* Desktop/Tablet: sticky panel */}
+          <div className="hidden md:block sticky bottom-2 z-40 mt-4">
+            <div className="mx-auto w-[min(100%,1000px)] px-3">
+              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+                <div className="px-3 py-2 flex items-center justify-between">
+                  <div className="text-sm font-semibold">Powerups</div>
+                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+                </div>
+                <div className="px-3 pb-3">
+                  <PowerupsGrid />
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="px-3 pb-3">
-            <PowerupsGrid />
-          </div>
-        </div>
-      </div>
-    </div>
-  </>
-)}
-
+        </>
+      )}
 
       {/* Local styles for ice & active glow */}
       <style jsx global>{`
-  /* ===== active glow on category switch ===== */
-  @keyframes wcPulse {
-    0% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0.35); }
-    70% { box-shadow: 0 0 0 8px rgba(0, 150, 255, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0); }
-  }
-  .wc-active-glow { animation: wcPulse 1.4s ease-out 1; }
+        @keyframes wcPulse {
+          0% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0.35); }
+          70% { box-shadow: 0 0 0 8px rgba(0, 150, 255, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0); }
+        }
+        .wc-active-glow { animation: wcPulse 1.4s ease-out 1; }
 
-  /* ===== ICE OVERLAY LAYERS ===== */
-  .wc-ice-wrap {
-    position: absolute; inset: 0;
-    border-radius: 0.75rem;
-    overflow: hidden; pointer-events: none; z-index: 1;
-  }
+        .wc-ice-wrap { position: absolute; inset: 0; border-radius: 0.75rem; overflow: hidden; pointer-events: none; z-index: 1; }
+        .wc-ice-rim {
+          position: absolute; inset: 0; border-radius: inherit;
+          box-shadow:
+            inset 0 0 0 2px rgba(140, 195, 255, .75),
+            inset 0 0 22px rgba(120, 185, 255, .55),
+            inset 0 8px 28px rgba(180, 225, 255, .35);
+          filter: saturate(1.1);
+          opacity: .95;
+        }
+        .wc-ice-tint {
+          position: absolute; inset: 0; border-radius: inherit;
+          background:
+            radial-gradient(120% 120% at 10% 110%, rgba(190,225,255,.42), rgba(160,210,255,.36) 35%, rgba(135,200,255,.30) 60%, rgba(125,195,255,.12) 80%),
+            linear-gradient(to top, rgba(150,205,255,.40), rgba(235,250,255,.28));
+          backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
+          -webkit-backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
+          mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg);
+          animation: wcIceGrow 700ms ease-out forwards;
+        }
+        @keyframes wcIceGrow {
+          from { mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg); }
+          to   { mask: conic-gradient(from 270deg at 0% 100%, transparent 360deg, black 360deg); }
+        }
+        .wc-ice-noise {
+          position: absolute; inset: 0; opacity: .35; mix-blend-mode: overlay;
+          background-size: 240px 240px;
+          background-image:
+            radial-gradient(circle at 20% 30%, rgba(255,255,255,.25) 0 12%, transparent 13% 100%),
+            radial-gradient(circle at 70% 60%, rgba(255,255,255,.2) 0 10%, transparent 11% 100%),
+            radial-gradient(circle at 35% 80%, rgba(255,255,255,.18) 0 9%, transparent 10% 100%),
+            radial-gradient(circle at 85% 25%, rgba(255,255,255,.18) 0 11%, transparent 12% 100%);
+          animation: wcNoiseDrift 6s ease-in-out infinite alternate;
+        }
+        @keyframes wcNoiseDrift {
+          from { transform: translate3d(0,0,0) scale(1); }
+          to   { transform: translate3d(-6px,-4px,0) scale(1.02); }
+        }
+        .wc-ice-cracks {
+          position: absolute; inset: 0; opacity: .7;
+          background-repeat: repeat; background-size: 220px 140px;
+          filter: saturate(1.15) drop-shadow(0 0 1px rgba(90,150,220,.25));
+          animation: wcCrackFade 480ms ease-out 80ms both;
+          --crack: url("data:image/svg+xml;utf8,\
+            <svg xmlns='http://www.w3.org/2000/svg' width='220' height='140' viewBox='0 0 220 140'>\
+              <g fill='none' stroke='%2387befc' stroke-opacity='1' stroke-width='1.2' stroke-linecap='round'>\
+                <path d='M10 120 L40 90 L70 110' stroke-dasharray='6 9'><animate attributeName=\"stroke-dashoffset\" from=\"80\" to=\"0\" dur=\"0.9s\" fill=\"freeze\"/></path>\
+                <path d='M95 135 L115 95 L160 115' stroke-dasharray='7 8'><animate attributeName=\"stroke-dashoffset\" from=\"70\" to=\"0\" dur=\"0.95s\" fill=\"freeze\"/></path>\
+                <path d='M20 20 L35 35 L55 22' stroke-dasharray='5 7'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+                <path d='M130 18 L150 40 L175 24' stroke-dasharray='5 8'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.85s\" fill=\"freeze\"/></path>\
+                <path d='M78 8 L85 28 L98 14' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+                <path d='M62 92 L70 108 L84 98' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
+              </g>\
+            </svg>");
+          background-image: var(--crack);
+        }
+        @keyframes wcCrackFade { from { opacity: 0; } to { opacity: .7; } }
 
-  /* cool rim so the “frozen” state reads at a glance */
-  .wc-ice-rim {
-    position: absolute; inset: 0; border-radius: inherit;
-    box-shadow:
-      inset 0 0 0 2px rgba(140, 195, 255, .75),
-      inset 0 0 22px rgba(120, 185, 255, .55),
-      inset 0 8px 28px rgba(180, 225, 255, .35);
-    filter: saturate(1.1);
-    opacity: .95;
-  }
-
-  /* tint that grows in using a conic mask */
-  .wc-ice-tint {
-    position: absolute; inset: 0; border-radius: inherit;
-    background:
-      radial-gradient(120% 120% at 10% 110%, rgba(190,225,255,.42), rgba(160,210,255,.36) 35%, rgba(135,200,255,.30) 60%, rgba(125,195,255,.12) 80%),
-      linear-gradient(to top, rgba(150,205,255,.40), rgba(235,250,255,.28));
-    backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
-    -webkit-backdrop-filter: saturate(1.15) brightness(1.06) blur(.5px);
-    mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg);
-    animation: wcIceGrow 700ms ease-out forwards;
-  }
-  @keyframes wcIceGrow {
-    from { mask: conic-gradient(from 270deg at 0% 100%, transparent 0deg, black 0deg); }
-    to   { mask: conic-gradient(from 270deg at 0% 100%, transparent 360deg, black 360deg); }
-  }
-
-  /* subtle crystalline noise drifting */
-  .wc-ice-noise {
-    position: absolute; inset: 0; opacity: .35; mix-blend-mode: overlay;
-    background-size: 240px 240px;
-    background-image:
-      radial-gradient(circle at 20% 30%, rgba(255,255,255,.25) 0 12%, transparent 13% 100%),
-      radial-gradient(circle at 70% 60%, rgba(255,255,255,.2) 0 10%, transparent 11% 100%),
-      radial-gradient(circle at 35% 80%, rgba(255,255,255,.18) 0 9%, transparent 10% 100%),
-      radial-gradient(circle at 85% 25%, rgba(255,255,255,.18) 0 11%, transparent 12% 100%);
-    animation: wcNoiseDrift 6s ease-in-out infinite alternate;
-  }
-  @keyframes wcNoiseDrift {
-    from { transform: translate3d(0,0,0) scale(1); }
-    to   { transform: translate3d(-6px,-4px,0) scale(1.02); }
-  }
-
-  /* animated crack field — kept BLUE and higher contrast */
-  .wc-ice-cracks {
-    position: absolute; inset: 0; opacity: .7;
-    background-repeat: repeat; background-size: 220px 140px;
-    filter: saturate(1.15) drop-shadow(0 0 1px rgba(90,150,220,.25));
-    animation: wcCrackFade 480ms ease-out 80ms both;
-    --crack: url("data:image/svg+xml;utf8,\
-      <svg xmlns='http://www.w3.org/2000/svg' width='220' height='140' viewBox='0 0 220 140'>\
-        <g fill='none' stroke='%2387befc' stroke-opacity='1' stroke-width='1.2' stroke-linecap='round'>\
-          <path d='M10 120 L40 90 L70 110' stroke-dasharray='6 9'><animate attributeName=\"stroke-dashoffset\" from=\"80\" to=\"0\" dur=\"0.9s\" fill=\"freeze\"/></path>\
-          <path d='M95 135 L115 95 L160 115' stroke-dasharray='7 8'><animate attributeName=\"stroke-dashoffset\" from=\"70\" to=\"0\" dur=\"0.95s\" fill=\"freeze\"/></path>\
-          <path d='M20 20 L35 35 L55 22' stroke-dasharray='5 7'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
-          <path d='M130 18 L150 40 L175 24' stroke-dasharray='5 8'><animate attributeName=\"stroke-dashoffset\" from=\"60\" to=\"0\" dur=\"0.85s\" fill=\"freeze\"/></path>\
-          <path d='M78 8 L85 28 L98 14' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
-          <path d='M62 92 L70 108 L84 98' stroke-dasharray='4 7'><animate attributeName=\"stroke-dashoffset\" from=\"50\" to=\"0\" dur=\"0.8s\" fill=\"freeze\"/></path>\
-        </g>\
-      </svg>");
-    background-image: var(--crack);
-  }
-  @keyframes wcCrackFade { from { opacity: 0; } to { opacity: .7; } }
-
-  /* sparkles drifting up */
-  .wc-ice-sparkles { position: absolute; inset: 0; overflow: hidden; }
-  .wc-ice-sparkle {
-    position: absolute; width: 6px; height: 6px; border-radius: 999px;
-    background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,.5) 45%, rgba(255,255,255,0) 72%);
-    left: calc(6% + (88% * var(--i, 0)));
-    top: 100%;
-    opacity: 0;
-    animation: wcSpark 1500ms ease-in infinite;
-    animation-delay: var(--d, 0s);
-    transform: translateY(0) scale(.7);
-  }
-  .wc-ice-sparkle:nth-child(odd)  { --i: .12; width: 4px; height: 4px; }
-  .wc-ice-sparkle:nth-child(3n)   { --i: .42; }
-  .wc-ice-sparkle:nth-child(4n)   { --i: .68; }
-  .wc-ice-sparkle:nth-child(5n)   { --i: .84; }
-  @keyframes wcSpark {
-    0%   { opacity: 0; transform: translateY(0) scale(.6); }
-    12%  { opacity: 1; }
-    75%  { opacity: .8; }
-    100% { opacity: 0; transform: translateY(-140%) scale(1); }
-  }
-`}</style>
-
-
-
+        .wc-ice-sparkles { position: absolute; inset: 0; overflow: hidden; }
+        .wc-ice-sparkle {
+          position: absolute; width: 6px; height: 6px; border-radius: 999px;
+          background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,.5) 45%, rgba(255,255,255,0) 72%);
+          left: calc(6% + (88% * var(--i, 0)));
+          top: 100%;
+          opacity: 0;
+          animation: wcSpark 1500ms ease-in infinite;
+          animation-delay: var(--d, 0s);
+          transform: translateY(0) scale(.7);
+        }
+        .wc-ice-sparkle:nth-child(odd)  { --i: .12; width: 4px; height: 4px; }
+        .wc-ice-sparkle:nth-child(3n)   { --i: .42; }
+        .wc-ice-sparkle:nth-child(4n)   { --i: .68; }
+        .wc-ice-sparkle:nth-child(5n)   { --i: .84; }
+        @keyframes wcSpark {
+          0%   { opacity: 0; transform: translateY(0) scale(.6); }
+          12%  { opacity: 1; }
+          75%  { opacity: .8; }
+          100% { opacity: 0; transform: translateY(-140%) scale(1); }
+        }
+      `}</style>
     </>
   );
 } // ← END WordChains component
 
-/** ===== Tiny canvas burst for thaw/unfreeze moments (TS-safe) ===== */
+
+/** ===== Tiny canvas burst for thaw/unfreeze moments ===== */
 function thawBurstAt(
   target?: HTMLElement | null,
   opts?: { shards?: number; durationMs?: number }
@@ -1733,15 +1544,14 @@ function thawBurstAt(
   canvas.style.left = "0";
   canvas.style.top = "0";
   canvas.style.pointerEvents = "none";
-  canvas.style.zIndex = "2"; // above frost layers
+  canvas.style.zIndex = "2";
 
-  // mount canvas inside the row container
   (target.style as CSSStyleDeclaration).position ||= "relative";
   target.appendChild(canvas);
 
   const ctx2d = canvas.getContext("2d");
   if (!ctx2d) { canvas.remove(); return; }
-  const C = ctx2d as CanvasRenderingContext2D; // non-null binding
+  const C = ctx2d as CanvasRenderingContext2D;
   C.scale(dpr, dpr);
 
   const N = Math.max(14, Math.min(48, (opts?.shards ?? 26)));
@@ -1777,19 +1587,16 @@ function thawBurstAt(
     C.globalCompositeOperation = "lighter";
 
     for (const s of shards) {
-      // integrate
       s.x += s.vx * (1 / 60);
       s.y += s.vy * (1 / 60);
-      s.vy += 240 * (1 / 60); // gravity-ish
+      s.vy += 240 * (1 / 60);
       s.rot += s.vrot * (1 / 60);
-      // fade
       s.a = Math.max(0, 1 - t);
 
       C.save();
       C.translate(s.x, s.y);
       C.rotate(s.rot);
       C.beginPath();
-      // skinny triangle shard
       C.moveTo(0, 0);
       C.lineTo(s.r * 0.6, -s.r * 3);
       C.lineTo(-s.r * 0.6, -s.r * 2.6);
@@ -1816,8 +1623,8 @@ function ChainRow({
   color,
   active,
 }: {
-  k: ChainKey;
-  state: ChainState;
+  k: "name" | "animal" | "country" | "food" | "brand" | "screen";
+  state: { length: number; multiplier: number; frozen: boolean };
   color: { badge: string; border: string; text: string; label: string; solid: string };
   active?: boolean;
 }) {
@@ -1825,7 +1632,6 @@ function ChainRow({
   const prevFrozen = React.useRef(state.frozen);
   const [thawing, setThawing] = React.useState(false);
 
-  // Play one-shot burst + flash when frozen -> unfrozen
   React.useEffect(() => {
     const was = prevFrozen.current;
     const now = state.frozen;
@@ -1849,10 +1655,8 @@ function ChainRow({
         state.frozen ? "shadow-inner" : "",
       ].join(" ")}
     >
-      {/* Strong frozen overlay while frozen */}
       {state.frozen && <FrozenOverlay />}
 
-      {/* Quick thaw flash when unfreezing */}
       {thawing && <div className="wc-thaw-flash" aria-hidden />}
 
       <div className="relative z-10 flex items-center justify-between gap-2">
@@ -1874,15 +1678,10 @@ function ChainRow({
 function FrozenOverlay() {
   return (
     <div className="wc-ice-wrap" aria-hidden>
-      {/* frosty rim around the card */}
       <div className="wc-ice-rim" />
-      {/* blue-ish tint that grows in */}
       <div className="wc-ice-tint" />
-      {/* crystalline noise for texture */}
       <div className="wc-ice-noise" />
-      {/* animated cracks */}
       <div className="wc-ice-cracks" />
-      {/* sparkles that float up */}
       <div className="wc-ice-sparkles">
         {Array.from({ length: 16 }).map((_, i) => (
           <span key={i} className="wc-ice-sparkle" style={{ ['--d' as any]: `${i * 0.1}s` }} />
@@ -1892,18 +1691,18 @@ function FrozenOverlay() {
   );
 }
 
-/** Small helper component for powerup rows (tile itself fills; click to use) */
+/** ===== PowerRow (tile used by PowerupsGrid) ===== */
 function PowerRow({
-  label,      // POWERUP NAME, e.g. "NUKE"
-  icon,       // one emoji, e.g. "💥"
-  available,  // number available (no "charges" word)
+  label,
+  icon,
+  available,
   onUse,
-  fillClass,  // category color class (e.g. CHAIN_COLORS.country.solid)
-  pct,        // 0..100
-  counter,    // e.g. "7/10"
-  ready,      // glow when true
-  ringClass,  // e.g. "ring-purple-400"
-  info,       // CATEGORY label shown under name (e.g. "Countries")
+  fillClass,
+  pct,
+  counter,
+  ready,
+  ringClass,
+  info,
 }: {
   label: string;
   icon?: string;
@@ -1937,26 +1736,23 @@ function PowerRow({
         ready && canUse ? `ring-2 ring-offset-1 ring-offset-white ${ringClass || ""} wc-glow` : ""
       ].join(" ")}
     >
-      {/* FILL LAYER: whole tile fills with category color but keeps content readable */}
+      {/* fill layer */}
       <div
         className={`${fillClass || "bg-black/60"} absolute inset-y-0 left-0 opacity-70 transition-all duration-300`}
         style={{ width: `${pctClamped}%` }}
         aria-hidden
       />
-      {/* Optional leading sheen */}
+      {/* sheen */}
       <div
         className="absolute inset-y-0 left-0 w-4 bg-white/10 pointer-events-none"
         style={{ transform: `translateX(${pctClamped}%)` }}
         aria-hidden
       />
-
-      {/* CONTENT */}
+      {/* content */}
       <div className="relative z-10 px-3 pt-2 pb-2">
-        {/* Top row: emoji + POWERUP NAME + available count */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             {icon && <span className="text-lg" aria-hidden>{icon}</span>}
-            {/* Allow long names to wrap instead of truncating with … */}
             <span className="text-sm font-semibold whitespace-normal break-words leading-tight">
               {label}
             </span>
@@ -1966,7 +1762,6 @@ function PowerRow({
           </div>
         </div>
 
-        {/* Subline: CATEGORY on left, counter on right */}
         {(info || counter) && (
           <div className="mt-1 flex items-center justify-between text-[11px] text-gray-800">
             <span className="whitespace-normal break-words">{info}</span>
