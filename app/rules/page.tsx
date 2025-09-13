@@ -125,42 +125,77 @@ export default function RulesPage() {
 
 
             <Section id="powerups" title="Power-Ups (All Details)">
-              <p className="mb-3">Power-ups are earned by collecting <b>unique</b> words in specific categories.</p>
-              <ul className="space-y-3">
-                <li>
-                  <p className="font-semibold">🇨🇦 Countries → <b>Nuke</b></p>
-                  <ul className="list-disc pl-5">
-                    <li><b>Activation:</b> Collect <b>10 unique countries</b>.</li>
-                    <li><b>Effect:</b> Big board boost/clear to help push your run further.</li>
-                    <li><b>Duration/Reset:</b> Instant effect; continues the current run.</li>
-                  </ul>
-                </li>
-                <li>
-                  <p className="font-semibold">👤 Names → <b>Freeze Time</b></p>
-                  <ul className="list-disc pl-5">
-                    <li><b>Activation:</b> Collect <b>10 unique names</b>.</li>
-                    <li><b>Effect:</b> Pauses the timer <b>until you enter the next answer</b>.</li>
-                    <li><b>Duration/Reset:</b> Ends on next valid submission or if the run ends.</li>
-                  </ul>
-                </li>
-                <li>
-                  <p className="font-semibold">🐾 Animals → <b>Wild Surge</b></p>
-                  <ul className="list-disc pl-5">
-                    <li><b>Activation:</b> Collect <b>10 unique animals</b>.</li>
-                    <li><b>Effect:</b> Adds a temporary <b>+20×</b> boost to your multiplier.</li>
-                    <li><b>Duration/Reset:</b> The +20× is removed when your multiplier resets (e.g., bad answer / timeout).</li>
-                  </ul>
-                </li>
-                <li>
-                  <p className="font-semibold">🍎 Foods → <b>Extra Life</b></p>
-                  <ul className="list-disc pl-5">
-                    <li><b>Activation:</b> Collect <b>5 unique foods</b>.</li>
-                    <li><b>Effect:</b> +1 life.</li>
-                    <li><b>Limit:</b> Max health is <b>5</b>.</li>
-                  </ul>
-                </li>
-              </ul>
-            </Section>
+  <p className="mb-3">
+    Power-ups are earned by collecting <b>unique</b> words in specific categories. Charges are per run.
+  </p>
+
+  <ul className="space-y-4">
+    <li>
+      <p className="font-semibold">🇨🇦 Countries → <b>Nuke</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>10 unique countries</b>.</li>
+        <li><b>Effect:</b> Clears reuse limits — you may reuse any previously played word this run.</li>
+        <li><b>Duration:</b> Instant effect; persists for the rest of the run.</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">👤 Names → <b>ChatGPT</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>10 unique names</b>.</li>
+        <li>
+          <b>Effect:</b> Instantly plays a <i>random valid word</i> that <i>fits your current chain</i>.<br/>
+          If the last accepted word was a category word, Research picks from that same category; otherwise it plays any valid word.
+        </li>
+        <li><b>Notes:</b> The auto-played word <u>does not grant unique-word credit</u> (it won’t charge any power-up). If nothing valid is found, the charge is still consumed.</li>
+        <li><b>Duration:</b> One word (instant).</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">🐾 Animals → <b>Wild Surge</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>10 unique animals</b>.</li>
+        <li><b>Effect:</b> Temporary <b>+20×</b> additive boost to your total multiplier.</li>
+        <li><b>Ends when</b> you lose your multiplier (e.g., invalid answer / timeout / category reset).</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">🍎 Foods → <b>Extra Life</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>5 unique foods</b>.</li>
+        <li><b>Effect:</b> Gain <b>+1 life</b> (max health <b>5</b>).</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">💼 Brands → <b>Sponsor Boost</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>5 unique brands</b>.</li>
+        <li><b>Effect:</b> <b>+50×</b> additive bonus on your <b>next</b> valid word only.</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">🎬 TV/Movies → <b>Montage</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Collect <b>10 unique TV/Movie entries</b>.</li>
+        <li><b>Effect:</b> <b>Full freeze</b> — the timer is paused <b>until your next valid submission</b> (not timed).</li>
+        <li><b>Ends when</b> you enter a valid word (or the run ends).</li>
+      </ul>
+    </li>
+
+    <li>
+      <p className="font-semibold">🔁 Same-Letter → <b>Mirror Charm</b></p>
+      <ul className="list-disc pl-5">
+        <li><b>Activation:</b> Play <b>10 unique</b> same-letter words (start and end with the same letter).</li>
+        <li><b>Effect:</b> <b>+10×</b> additive bonus on your <b>next</b> valid word only.</li>
+      </ul>
+    </li>
+  </ul>
+</Section>
+
 
             <Section id="scoring" title="Scoring Overview">
               <p className="mb-2 italic">Exact values follow the live constants; this summarizes where points come from.</p>
