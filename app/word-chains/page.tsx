@@ -101,7 +101,6 @@ async function postRunToLeaderboard(summary: {
     return { ok: false, status: 0, msg: "Network error saving score." };
   }
 }
-
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
@@ -126,14 +125,8 @@ export default function WordChains() {
   // ---- SAFARI-SAFE, NON-BLOCKING SOUND WRAPPER (surgical) ----
   const safePlay = useCallback(
     (key: string, opts?: any) => {
-      // If Safari/iOS hasn't unlocked audio yet, skip typing sfx to avoid first-key freeze
       if (key === "typing" && typeof window !== "undefined" && !(window as any).__sfx_unlocked) return;
-      try {
-        // Defer to next frame so we never block key events
-        requestAnimationFrame(() => {
-          try { play(key as any, opts); } catch {}
-        });
-      } catch {}
+      try { requestAnimationFrame(() => { try { play(key as any, opts); } catch {} }); } catch {}
     },
     [play]
   );
@@ -215,171 +208,161 @@ export default function WordChains() {
       });
     })();
   }, []);
+/** ===================== Core game state ===================== */
+const [started, setStarted] = useState(false);
+const [paused, setPaused] = useState(false);
 
-  /** ===================== Core game state ===================== */
-  const [started, setStarted] = useState(false);
-  const [paused, setPaused] = useState(false);
+// keep refs in sync with latest state
+useEffect(() => { startedRef.current = started; }, [started]);
+useEffect(() => { pausedRef.current  = paused;  }, [paused]);
 
-  // keep refs in sync with latest state
-  useEffect(() => { startedRef.current = started; }, [started]);
-  useEffect(() => { pausedRef.current  = paused;  }, [paused]);
+const [last, setLast] = useState<string>("start");
+const [used, setUsed] = useState<Set<string>>(new Set());
+const [recent, setRecent] = useState<string[]>([]);
+const [score, setScore] = useState(0);
+const [links, setLinks] = useState(0);
+const [lives, setLives] = useState(3);
+const [timeLeft, setTimeLeft] = useState(30);
+const [msg, setMsg] = useState("");
+const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [last, setLast] = useState<string>("start");
-  const [used, setUsed] = useState<Set<string>>(new Set());
-  const [recent, setRecent] = useState<string[]>([]);
-  const [score, setScore] = useState(0);
-  const [links, setLinks] = useState(0);
-  const [lives, setLives] = useState(3);
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [msg, setMsg] = useState("");
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Post game
-  const [showNamePrompt, setShowNamePrompt] = useState(false);
-  const [finalScore, setFinalScore] = useState(0);
-  const [playerName, setPlayerName] = useState("");
+// Post game
+const [showNamePrompt, setShowNamePrompt] = useState(false);
+const [finalScore, setFinalScore] = useState(0);
+const [playerName, setPlayerName] = useState("");
 
-  // Stats (per-run counters – persisted after run)
-  type Stats = {
-    totalWords: number;
-    animals: number;
-    countries: number;
-    names: number;
-    sameLetterWords: number;
-    longestAnimalStreak: number;
-    longestCountryStreak: number;
-    longestNameStreak: number;
-    highestWordScore: number;
-    switches: number;
-    linksEarned: number;
-    linksSpent: number;
-    // optional enriched fields (we will fill these at endGame as fallbacks)
-    highestMultiplier?: number;
-    longestChain?: number;
-    uniqueWords?: number;
-    totalSessions?: number;
-  };
-  const [stats, setStats] = useState<Stats>({
-    totalWords: 0,
-    animals: 0,
-    countries: 0,
-    names: 0,
-    sameLetterWords: 0,
-    longestAnimalStreak: 0,
-    longestCountryStreak: 0,
-    longestNameStreak: 0,
-    highestWordScore: 0,
-    switches: 0,
-    linksEarned: 0,
-    linksSpent: 0,
-  });
-  const persistStats = (s: Stats) => localStorage.setItem("wc_stats", JSON.stringify(s));
+// Stats (per-run counters – persisted after run)
+type Stats = {
+  totalWords: number;
+  animals: number;
+  countries: number;
+  names: number;
+  sameLetterWords: number;
+  longestAnimalStreak: number;
+  longestCountryStreak: number;
+  longestNameStreak: number;
+  highestWordScore: number;
+  switches: number;
+  linksEarned: number;
+  linksSpent: number;
+  // optional enriched fields (we will fill these at endGame as fallbacks)
+  highestMultiplier?: number;
+  longestChain?: number;
+  uniqueWords?: number;
+  totalSessions?: number;
+};
+const [stats, setStats] = useState<Stats>({
+  totalWords: 0,
+  animals: 0,
+  countries: 0,
+  names: 0,
+  sameLetterWords: 0,
+  longestAnimalStreak: 0,
+  longestCountryStreak: 0,
+  longestNameStreak: 0,
+  highestWordScore: 0,
+  switches: 0,
+  linksEarned: 0,
+  linksSpent: 0,
+});
+const persistStats = (s: Stats) => localStorage.setItem("wc_stats", JSON.stringify(s));
 
-  const [sameMult, setSameMult] = useState(1);
-  const [chains, setChains] = useState<Record<ChainKey, ChainState>>({
-    name: { length: 0, multiplier: 1, frozen: false },
-    animal: { length: 0, multiplier: 1, frozen: false },
-    country: { length: 0, multiplier: 1, frozen: false },
-    food: { length: 0, multiplier: 1, frozen: false },
-    brand: { length: 0, multiplier: 1, frozen: false },
-    screen: { length: 0, multiplier: 1, frozen: false },
-  });
+const [sameMult, setSameMult] = useState(1);
+const [chains, setChains] = useState<Record<ChainKey, ChainState>>({
+  name: { length: 0, multiplier: 1, frozen: false },
+  animal: { length: 0, multiplier: 1, frozen: false },
+  country: { length: 0, multiplier: 1, frozen: false },
+  food: { length: 0, multiplier: 1, frozen: false },
+  brand: { length: 0, multiplier: 1, frozen: false },
+  screen: { length: 0, multiplier: 1, frozen: false },
+});
 
-  /** ===================== Multiplier (with completion x10 bonuses) ===================== */
-  /** ===================== Multiplier (ADD +10 per completed section) ===================== */
-  const [completedTracks, setCompletedTracks] = useState<Set<ChainKeyOrMain>>(new Set());
+/** ===================== Multiplier (with completion x10 bonuses) ===================== */
+/** ===================== Multiplier (ADD +10 per completed section) ===================== */
+const [completedTracks, setCompletedTracks] = useState<Set<ChainKeyOrMain>>(new Set());
 
-  const totalMultData = useMemo(() => {
-    // Sum of category multipliers (each starts at x1)
-    const catSum =
-      chains.name.multiplier +
-      chains.animal.multiplier +
-      chains.country.multiplier +
-      chains.food.multiplier +
-      chains.brand.multiplier +
-      chains.screen.multiplier;
+const totalMultData = useMemo(() => {
+  const catSum =
+    chains.name.multiplier +
+    chains.animal.multiplier +
+    chains.country.multiplier +
+    chains.food.multiplier +
+    chains.brand.multiplier +
+    chains.screen.multiplier;
 
-    // NEW: additive mission bonus → +10 per completed section (stacks)
-    const tracksCompleted = completedTracks.size;
-    const missionAdd = 10 * tracksCompleted;
+  const tracksCompleted = completedTracks.size;
+  const missionAdd = 10 * tracksCompleted;
 
-    // Base + missions, then apply same-letter multiplier multiplicatively
-    const basePlusMissions = Math.max(1, catSum) + missionAdd;
-    const total = basePlusMissions * sameMult;
+  const basePlusMissions = Math.max(1, catSum) + missionAdd;
+  const total = basePlusMissions * sameMult;
 
-    return { total, catSum, missionAdd, basePlusMissions, tracksCompleted };
-  }, [chains, sameMult, completedTracks]);
+  return { total, catSum, missionAdd, basePlusMissions, tracksCompleted };
+}, [chains, sameMult, completedTracks]);
 
-  const totalMult = totalMultData.total;
+const totalMult = totalMultData.total;
 
-  /** ===================== Run analytics for stats page KPIs ===================== */
-  const lastAcceptAtRef = useRef<number | null>(null); // last accepted word time
-  const deltasRef = useRef<number[]>([]);              // ms gaps between accepted words (per run)
-  const peakTotalMultRef = useRef<number>(1);          // peak effective multiplier this run
-  const currentChainRef = useRef<number>(0);           // uninterrupted valid-word chain (any)
-  const maxChainRef = useRef<number>(0);               // longest chain this run
+/** ===================== Run analytics for stats page KPIs ===================== */
+const lastAcceptAtRef = useRef<number | null>(null);
+const deltasRef = useRef<number[]>([]);
+const peakTotalMultRef = useRef<number>(1);
+const currentChainRef = useRef<number>(0);
+const maxChainRef = useRef<number>(0);
 
-  /** ===================== Power thresholds & state ===================== */
-  // thresholds per power (unique words needed per charge)
-  const POWER_THRESHOLDS: Record<PowerKey, number> = {
-    name: 10,      // Names → Freeze until next valid answer
-    animal: 10,    // Animals → +20x surge (until multiplier lost)
-    country: 10,   // Countries → NUKE
-    food: 5,       // Foods → +1 life (max 5)
-    brand: 5,      // Brands → +50x next word only
-    screen: 10,    // TV/Movies → freeze 15s
-    same: 10,      // Same-letter → +10x next word only
-  };
+/** ===================== Power thresholds & state ===================== */
+const POWER_THRESHOLDS: Record<PowerKey, number> = {
+  name: 10,      // Names → RESEARCH (auto word)
+  animal: 10,    // Animals → +20x surge (until multiplier lost)
+  country: 10,   // Countries → NUKE
+  food: 5,       // Foods → +1 life (max 5)
+  brand: 5,      // Brands → +50x next word only
+  screen: 10,    // TV/Movies → FULL FREEZE until next valid word
+  same: 10,      // Same-letter → +10x next word only
+};
 
-  /** ==== Single-word one-shot SFX (plays once per run) ==== */
-  const SINGLE_WORD_SFX: Array<{ threshold: number; key: string }> = [
-    { threshold: 1000,  key: "word_1k" },
-    { threshold: 2000,  key: "bigword" }, // your existing asset
-    { threshold: 4000,  key: "word_4k" },
-    { threshold: 8000,  key: "word_8k" },
-    { threshold: 15000, key: "word_15k" },
-  ];
+/** ==== Single-word one-shot SFX (plays once per run) ==== */
+const SINGLE_WORD_SFX: Array<{ threshold: number; key: string }> = [
+  { threshold: 1000,  key: "word_1k" },
+  { threshold: 2000,  key: "bigword" },
+  { threshold: 4000,  key: "word_4k" },
+  { threshold: 8000,  key: "word_8k" },
+  { threshold: 15000, key: "word_15k" },
+];
+const playedSingleWordKeysRef = useRef<Set<string>>(new Set());
 
-  // Tracks which single-word sound keys already played this run
-  const playedSingleWordKeysRef = useRef<Set<string>>(new Set());
-  /** ==== Total-score milestones (play once per run, highest milestone only per turn) ==== */
-  const TOTAL_SCORE_SFX: Array<{ threshold: number; key: string }> = [
-    { threshold: 10_000,    key: "total_10k" },
-    { threshold: 50_000,    key: "total_50k" },
-    { threshold: 100_000,   key: "total_100k" },
-    { threshold: 250_000,   key: "total_250k" },
-    { threshold: 500_000,   key: "total_500k" },
-    { threshold: 1_000_000, key: "total_1m"  },
-  ];
+/** ==== Total-score milestones (play once per run) ==== */
+const TOTAL_SCORE_SFX: Array<{ threshold: number; key: string }> = [
+  { threshold: 10_000,    key: "total_10k" },
+  { threshold: 50_000,    key: "total_50k" },
+  { threshold: 100_000,   key: "total_100k" },
+  { threshold: 250_000,   key: "total_250k" },
+  { threshold: 500_000,   key: "total_500k" },
+  { threshold: 1_000_000, key: "total_1m"  },
+];
+const playedTotalMilestonesRef = useRef<Set<number>>(new Set());
 
-  // Which milestones have already chimed this run (by threshold)
-  const playedTotalMilestonesRef = useRef<Set<number>>(new Set());
+const playTotalMilestoneOnce = useCallback((totalAfter: number) => {
+  const hits = TOTAL_SCORE_SFX.filter(t => totalAfter >= t.threshold && !playedTotalMilestonesRef.current.has(t.threshold));
+  if (!hits.length) return;
+  const top = hits.reduce((a, b) => (a.threshold > b.threshold ? a : b));
+  for (const t of TOTAL_SCORE_SFX) {
+    if (t.threshold <= top.threshold) playedTotalMilestonesRef.current.add(t.threshold);
+  }
+  try { (safePlay as any)(top.key); } catch {}
+}, [safePlay]);
 
-  /** Plays the highest *new* milestone crossed this turn, marks all lower as done */
-  const playTotalMilestoneOnce = useCallback((totalAfter: number) => {
-    const hits = TOTAL_SCORE_SFX.filter(t => totalAfter >= t.threshold && !playedTotalMilestonesRef.current.has(t.threshold));
-    if (!hits.length) return;
-    const top = hits.reduce((a, b) => (a.threshold > b.threshold ? a : b));
-    for (const t of TOTAL_SCORE_SFX) {
-      if (t.threshold <= top.threshold) playedTotalMilestonesRef.current.add(t.threshold);
+const playSingleWordOneShot = useCallback((points: number) => {
+  let best: { threshold: number; key: string } | undefined;
+  for (const t of SINGLE_WORD_SFX) {
+    if (points >= t.threshold) {
+      if (!best || t.threshold > best.threshold) best = t;
     }
-    try { (safePlay as any)(top.key); } catch {}
-  }, [safePlay]);
-
-  // Highest-tier-only per word; plays the tier’s sound once per run
-  const playSingleWordOneShot = useCallback((points: number) => {
-    let best: { threshold: number; key: string } | undefined;
-    for (const t of SINGLE_WORD_SFX) {
-      if (points >= t.threshold) {
-        if (!best || t.threshold > best.threshold) best = t;
-      }
-    }
-    if (!best) return;
-    if (playedSingleWordKeysRef.current.has(best.key)) return;
-    playedSingleWordKeysRef.current.add(best.key);
-    try { (safePlay as any)(best.key); } catch {}
-  }, [safePlay]);
-
+  }
+  if (!best) return;
+  if (playedSingleWordKeysRef.current.has(best.key)) return;
+  playedSingleWordKeysRef.current.add(best.key);
+  try { (safePlay as any)(best.key); } catch {}
+}, [safePlay]);
   /** ===================== Category detection ===================== */
   const getCategories = useCallback(
     (w: string): Set<ChainKey> => {
@@ -409,10 +392,7 @@ export default function WordChains() {
   useEffect(() => {
     if (!started || paused) return;
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(
-      () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
-      1000
-    );
+    timerRef.current = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -422,7 +402,7 @@ export default function WordChains() {
   }, [started, paused]);
 
   useEffect(() => {
-    if (!started) return;                 // only care while game is running
+    if (!started) return;
     if (timeLeft !== 0) {
       timeoutLatchRef.current = false;
       return;
@@ -430,29 +410,22 @@ export default function WordChains() {
     if (timeoutLatchRef.current) return;
     timeoutLatchRef.current = true;
 
-    // Stop heartbeat immediately at 0
     try { (stop as any)("warning"); } catch {}
     warningPlayingRef.current = false;
 
-    // Stop the ticking interval
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Deduct one life
     loseLife("Time's up!");
 
-    // If still alive, reset clock & resume
     setTimeout(() => {
       if (!startedRef.current) return;
       setTimeLeft(30);
       if (!pausedRef.current) {
         if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = setInterval(
-          () => setTimeLeft((t) => (t > 0 ? t - 1 : 0)),
-          1000
-        );
+        timerRef.current = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
       }
       timeoutLatchRef.current = false;
     }, 0);
@@ -474,7 +447,7 @@ export default function WordChains() {
   const [nextWordAddBonus, setNextWordAddBonus] = useState(0); // e.g., +50x or +10x next word
   const [surgeActive, setSurgeActive] = useState(false);       // +20x until multiplier is lost
 
-  // Freeze-until-next-answer (Names)
+  // Freeze-until-next-answer (used by Montage FULL freeze & “Research” completion)
   const [pauseUntilAnswer, setPauseUntilAnswer] = useState(false);
   const pauseUntilAnswerRef = useRef(false);
   useEffect(() => { pauseUntilAnswerRef.current = pauseUntilAnswer; }, [pauseUntilAnswer]);
@@ -485,19 +458,16 @@ export default function WordChains() {
     if (eff > peakTotalMultRef.current) peakTotalMultRef.current = eff;
   }, [totalMult, surgeActive, nextWordAddBonus]);
 
-  // (Optional) tighter "lifeLost" playback that skips tiny leading silence (~60ms)
+  // (Optional) tighter "lifeLost" playback that skips tiny leading silence
   const playLifeLostTight = () => {
-    const off = 0.06; // 60ms
+    const off = 0.06;
     try { (play as any)("lifeLost", { seek: off, offset: off, startAt: off }); }
     catch { try { (play as any)("lifeLost"); } catch {} }
   };
 
-  // Lose a life and handle game-over if no lives left
   const loseLife = (reason: string) => {
     setLives((l) => {
       const next = l - 1;
-
-      // Always stop the heartbeat as soon as a life is lost
       try { (stop as any)("warning"); } catch {}
       if (typeof warningPlayingRef !== "undefined") warningPlayingRef.current = false;
 
@@ -509,31 +479,24 @@ export default function WordChains() {
       setMsg(`${reason} (-1 life)`);
       try { playLifeLostTight(); } catch { try { (play as any)("lifeLost"); } catch {} }
       try { vfx.shake("#score", 400); } catch {}
-
       return next;
     });
   };
 
-  // REPLACE your existing endGame with this:
   const endGame = async (reason: string) => {
     setStarted(false);
     setMsg(`Game over: ${reason}`);
     setFinalScore(score);
 
-    // ensure heartbeat is killed on game end
     try { stop("warning"); } catch {}
     warningPlayingRef.current = false;
 
-    // sfx
     try { safePlay("gameover"); } catch {}
 
-    // Compute per-run avg speed (ms/word)
     const gaps = deltasRef.current;
     const perRunAvgMs = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
 
-    // ----- Local analytics stores (used by stats page) -----
     try {
-      // 1) per-run speed list
       const speeds = JSON.parse(localStorage.getItem("wc_session_speeds") || "[]");
       const speedsArr = Array.isArray(speeds) ? speeds : [];
       if (perRunAvgMs != null && isFinite(perRunAvgMs) && perRunAvgMs > 0) {
@@ -541,33 +504,27 @@ export default function WordChains() {
       }
       localStorage.setItem("wc_session_speeds", JSON.stringify(speedsArr));
 
-      // 2) session counter
       const prevSessions = Number(localStorage.getItem("wc_total_sessions") || "0") || 0;
       localStorage.setItem("wc_total_sessions", String(prevSessions + 1));
 
-      // 3) peak effective multiplier for this run (already tracking effects)
       const peaks = JSON.parse(localStorage.getItem("wc_peak_multipliers") || "[]");
       const peaksArr = Array.isArray(peaks) ? peaks : [];
       const peakThisRun = Number(peakTotalMultRef.current) || 1;
       peaksArr.push(peakThisRun);
       localStorage.setItem("wc_peak_multipliers", JSON.stringify(peaksArr));
-    } catch { /* ignore */ }
+    } catch {}
 
-    // Derive run-level fallbacks
     const uniqueWordsThisRun = used.size;
     const longestChainThisRun = maxChainRef.current || 0;
     const highestMultThisRun = Number((peakTotalMultRef.current || 1).toFixed(2));
 
-    // ----- Merge with previous local all-time to preserve "records" -----
     let prevLocal: any = {};
     try { prevLocal = JSON.parse(localStorage.getItem("wc_stats") || "{}") || {}; } catch {}
-
     const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-    const sessionsNow = num(localStorage.getItem("wc_total_sessions")); // already incremented above
+    const sessionsNow = num(localStorage.getItem("wc_total_sessions"));
 
     const mergedAllTime = {
       ...prevLocal,
-      // accumulators
       totalWords:        num(prevLocal.totalWords)        + num(stats.totalWords),
       animals:           num(prevLocal.animals)           + num(stats.animals),
       countries:         num(prevLocal.countries)         + num(stats.countries),
@@ -576,22 +533,18 @@ export default function WordChains() {
       switches:          num(prevLocal.switches)          + num(stats.switches),
       linksEarned:       num(prevLocal.linksEarned)       + num(stats.linksEarned),
       linksSpent:        num(prevLocal.linksSpent)        + num(stats.linksSpent),
-      // records
       highestWordScore:    Math.max(num(prevLocal.highestWordScore),    num(stats.highestWordScore)),
       longestAnimalStreak: Math.max(num(prevLocal.longestAnimalStreak), num(stats.longestAnimalStreak)),
       longestCountryStreak:Math.max(num(prevLocal.longestCountryStreak),num(stats.longestCountryStreak)),
       longestNameStreak:   Math.max(num(prevLocal.longestNameStreak),   num(stats.longestNameStreak)),
       longestChain:        Math.max(num(prevLocal.longestChain),         num(longestChainThisRun), num(stats.longestChain)),
       highestMultiplier:   Math.max(num(prevLocal.highestMultiplier),    num(highestMultThisRun)),
-      // session/unique
       totalSessions: sessionsNow,
       uniqueWords:   Math.max(num(prevLocal.uniqueWords), num(uniqueWordsThisRun)),
     };
 
-    // Persist for stats page
     persistStats(mergedAllTime);
 
-    // Send per-run summary to server (if signed in)
     const summary = {
       bestScore: Number(score) || 0,
       longestChain: Number(longestChainThisRun || 0),
@@ -645,7 +598,7 @@ export default function WordChains() {
     return "start";
   }, [dict]);
 
-  /** ===================== Missions ===================== */
+  /** ===================== Missions (unchanged rules) ===================== */
   type MissionKindCat = "enterChain" | "reachMult" | "combo" | "scoreWord" | "validWords";
   type MissionKindMain = "reachSame" | "totalScore" | "sequence";
 
@@ -654,7 +607,6 @@ export default function WordChains() {
     | { id: string; owner: "main"; chain: "main"; kind: Exclude<MissionKindMain, "sequence">; target: number; progress: number; reward: number }
     | { id: string; owner: "main"; chain: "main"; kind: "sequence"; sequence: ChainKey[]; progress: number; reward: number };
 
-  // 7 missions per category; 7 for main
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
     const R = 1;
     return [
@@ -691,18 +643,15 @@ export default function WordChains() {
     screen: buildCategoryTrack("screen"),
   }), []);
 
-  // Current mission index per owner (0..5)
   const [missionIndex, setMissionIndex] = useState<Record<ChainKeyOrMain, number>>({
     main: 0, name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0
   });
 
-  // Unlocked tracks (start with only main)
   const allCategories: ChainKey[] = ["name","animal","country","food","brand","screen"];
   const [unlocked, setUnlocked] = useState<Set<ChainKeyOrMain>>(new Set<ChainKeyOrMain>(["main"]));
   const [unlockOrder, setUnlockOrder] = useState<ChainKeyOrMain[]>(["main"]);
   const lockedCategories = useMemo(() => allCategories.filter((c) => !unlocked.has(c)), [unlocked]);
 
-  // Track mission progress for the *current* mission of each owner
   const [missionProgress, setMissionProgress] = useState<Record<string, number>>({});
   const currentMissions = useMemo(() => {
     const list: Mission[] = [];
@@ -714,7 +663,6 @@ export default function WordChains() {
     return list;
   }, [unlocked, missionIndex, missionTracks]);
 
-  // Completed mission ids (to pay rewards only once)
   const [completedMissionIds, setCompletedMissionIds] = useState<Set<string>>(new Set());
 
   /** ===================== Unlock helpers ===================== */
@@ -735,28 +683,21 @@ export default function WordChains() {
     if (remaining.length === 0) return;
     const pick = remaining[Math.floor(Math.random() * remaining.length)];
     appendUnlock(pick);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unlocked]);
 
   /** ===================== Powerups (unique-word charges) ===================== */
   type PowerCharges = Record<PowerKey, number>;
-
   const [powerCharges, setPowerCharges] = useState<PowerCharges>({
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
   });
 
-  // NEW: thresholds already credited (prevents double-charging)
   const [powerBucketsCredited, setPowerBucketsCredited] = useState<Record<PowerKey, number>>({
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0
   });
 
-  // Unique word sets per category and same-letter
   const [uniqueSeen, setUniqueSeen] = useState<Record<PowerKey, Set<string>>>({
     name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
   });
-
-  // ===== Mobile powerups accordion state (collapsed by default) =====
-  const [mobilePowersOpen, setMobilePowersOpen] = useState(false);
 
   const tryGrantChargeUnique = (key: PowerKey, rawWord: string) => {
     const need = POWER_THRESHOLDS[key];
@@ -779,7 +720,6 @@ export default function WordChains() {
         const delta = newBuckets - prevBuckets;
         if (delta > 0) {
           setPowerCharges((ch) => ({ ...ch, [key]: (ch[key] ?? 0) + delta }));
-          // +0.5 LINK per bucket
           setLinks((x) => {
             const nx = Math.round((x + 0.5 * delta) * 2) / 2;
             setStats((s) => ({ ...s, linksEarned: s.linksEarned + 0.5 * delta }));
@@ -798,19 +738,264 @@ export default function WordChains() {
     });
   };
 
+  /** ===================== “Research” helper (auto-play) ===================== */
+  const chooseRandomValidForCategory = useCallback(async (targetCat: ChainKey | null): Promise<string | null> => {
+    // Build candidate pool
+    let pool: string[] = [];
+    const pushSet = (s: Set<string>) => { if (s && s.size) pool.push(...s); };
+
+    if (targetCat === "name") pushSet(names);
+    else if (targetCat === "animal") pushSet(animals);
+    else if (targetCat === "country") pushSet(countries);
+    else if (targetCat === "food") pushSet(foods);
+    else if (targetCat === "brand") pushSet(brands);
+    else if (targetCat === "screen") pushSet(screens);
+    else {
+      // No category → any dictionary word
+      if (dict) pushSet(dict);
+    }
+
+    if (pool.length === 0) return null;
+
+    // Chain constraints
+    const mustStart = last === "start" ? null : lastLetter(last).toLowerCase();
+    const mustContain = last === "start" ? null : firstLetter(last).toLowerCase();
+
+    // Shuffle a slice to keep it quick
+    for (let tries = 0; tries < 800; tries++) {
+      const w = pool[Math.floor(Math.random() * pool.length)];
+      if (!w) continue;
+
+      const wl = w.toLowerCase();
+      if (used.has(wl)) continue;
+      if (mustStart && wl[0] !== mustStart) continue;
+      if (mustContain && !wl.includes(mustContain)) continue;
+
+      // If targeting a category, ensure the candidate actually belongs there
+      if (targetCat) {
+        const cats = getCategories(w);
+        if (!cats.has(targetCat)) continue;
+      }
+
+      // Respect INPUT_RE + strict validate
+      if (!INPUT_RE.test(wl)) continue;
+      const ok = await validateWord(w);
+      if (!ok) continue;
+
+      return w; // found one!
+    }
+
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [last, used, dict, names, animals, countries, foods, brands, screens, validateWord, getCategories]);
+
+  /** ===================== Core “accept a word” routine ===================== */
+  const applyAcceptedWord = useCallback((w: string, { auto }: { auto?: boolean } = {}) => {
+    const wl = w.toLowerCase();
+
+    // release any freeze-until-next
+    if (pauseUntilAnswer) {
+      setPauseUntilAnswer(false);
+      setPaused(false);
+    }
+
+    // timing stats
+    const now = Date.now();
+    if (lastAcceptAtRef.current != null) {
+      const dt = now - lastAcceptAtRef.current;
+      if (Number.isFinite(dt) && dt > 0 && dt < 10 * 60 * 1000) {
+        deltasRef.current.push(dt);
+      }
+    }
+    lastAcceptAtRef.current = now;
+
+    currentChainRef.current += 1;
+    if (currentChainRef.current > maxChainRef.current) {
+      maxChainRef.current = currentChainRef.current;
+    }
+
+    const sameLetter = w[0].toLowerCase() === w[w.length - 1].toLowerCase();
+    if (sameLetter) {
+      setSameMult((s) => 1 + (s - 1) + SAME_LETTER_GROWTH);
+      setStats((s) => ({ ...s, sameLetterWords: s.sameLetterWords + 1 }));
+      tryGrantChargeUnique("same", w);
+    } else if (sameMult > 1) setSameMult(1);
+
+    const enteringCats = getCategories(w);
+    let next = { ...chains };
+    enteringCats.forEach((k) => {
+      const c = next[k];
+      next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH), frozen: false };
+      tryGrantChargeUnique(k, w);
+    });
+    next = applySwitching(enteringCats, next);
+    setChains(next);
+    setPrevCats(enteringCats);
+
+    const catsArr = Array.from(enteringCats);
+    const base = catsArr.length
+      ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1))
+      : CHAIN_BASE.normal;
+
+    const additive = (surgeActive ? 20 : 0) + nextWordAddBonus;
+    const effectiveMult = totalMult + additive;
+    const gained = Math.round(w.length * base * effectiveMult);
+
+    playSingleWordOneShot(gained);
+
+    setScore((prev) => {
+      const newTotal = prev + gained;
+      playTotalMilestoneOnce(newTotal);
+      return newTotal;
+    });
+
+    setMsg(
+      `+${gained} points (total ${fmt(effectiveMult)}${
+        nextWordAddBonus > 0 ? ` · +${nextWordAddBonus}x next-word` : ""
+      }${surgeActive ? " · +20x surge" : ""}${auto ? " · Research" : ""})`
+    );
+
+    try { safePlay("accept"); } catch {}
+    try { stop("warning"); } catch {}
+    warningPlayingRef.current = false;
+    lowWarnTickRef.current = null;
+
+    try {
+      const el = inputDomRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        vfx.ringBurstAt(r.left + r.width / 2, r.top + r.height / 2);
+        vfx.glowOnce(el);
+      } else {
+        vfx.ringBurstAtFromEl("input[name='word']");
+      }
+    } catch {}
+
+    if (gained >= 2000) {
+      try { vfx.confettiBurst({ power: 2 }); } catch {}
+      try { vfx.shake("#score", 300); } catch {}
+    }
+
+    if (nextWordAddBonus !== 0) setNextWordAddBonus(0);
+
+    setStats((s) => {
+      const upd: any = { ...s, totalWords: s.totalWords + 1, highestWordScore: Math.max(s.highestWordScore, gained) };
+      if (enteringCats.has("animal")) { upd.animals = s.animals + 1; upd.longestAnimalStreak = Math.max(s.longestAnimalStreak, next.animal.length); }
+      if (enteringCats.has("country")) { upd.countries = s.countries + 1; upd.longestCountryStreak = Math.max(s.longestCountryStreak, next.country.length); }
+      if (enteringCats.has("name")) { upd.names = s.names + 1; upd.longestNameStreak = Math.max(s.longestNameStreak, next.name.length); }
+      return upd;
+    });
+
+    setUsed((u) => new Set(u).add(wl));
+    setRecent((r) => [w, ...r].slice(0, 30));
+    setLast(w);
+    setTimeLeft(30);
+
+    // Missions progression (same as manual submit)
+    setMissionProgress((mp) => {
+      const nx = { ...mp };
+      currentMissions.forEach((m) => {
+        const id = m.id;
+        const cur = nx[id] ?? 0;
+
+        if (m.owner !== "main") {
+          const inCat = enteringCats.has(m.chain);
+          if (m.kind === "enterChain" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
+          if (m.kind === "reachMult") {
+            const current = next[m.chain].multiplier;
+            nx[id] = Math.min((m as any).target, current);
+          }
+          if (m.kind === "combo") nx[id] = inCat ? Math.min((m as any).target, cur + 1) : 0;
+          if (m.kind === "scoreWord" && inCat && gained >= (m as any).target) nx[id] = (m as any).target;
+          if (m.kind === "validWords" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
+        } else {
+          if (m.kind === "reachSame") {
+            nx[id] = Math.min((m as any).target, sameMult);
+          } else if (m.kind === "totalScore") {
+            nx[id] = Math.min((m as any).target, cur + gained);
+          } else if (m.kind === "sequence") {
+            const seq = (m as any).sequence as ChainKey[];
+            const idx = cur || 0;
+            const need = seq[idx];
+            const matched = need ? enteringCats.has(need) : false;
+            nx[id] = matched ? idx + 1 : (enteringCats.has(seq[0]) ? 1 : 0);
+          }
+        }
+      });
+      return nx;
+    });
+  }, [
+    pauseUntilAnswer, nextWordAddBonus, surgeActive, totalMult, chains, getCategories,
+    tryGrantChargeUnique, playSingleWordOneShot, playTotalMilestoneOnce, sameMult,
+    currentMissions, stop, safePlay, vfx
+  ]);
+
+  /** ===================== Switching (LINKS freeze) ===================== */
+  const applySwitching = (enteringCats: Set<ChainKey>, next: Record<ChainKey, ChainState>) => {
+    const leaving = new Set<ChainKey>([...prevCats].filter((c) => !enteringCats.has(c)));
+    if (leaving.size === 0) return next;
+    if (links >= 1) {
+      setLinks((l) => { setStats((s) => ({ ...s, linksSpent: s.linksSpent + 1 })); return Math.max(0, l - 1); });
+      leaving.forEach((k) => { next[k] = { ...next[k], frozen: true }; });
+    } else {
+      leaving.forEach((k) => { next[k] = { length: 0, multiplier: 1, frozen: false }; });
+      if (leaving.has("animal")) setSurgeActive(false);
+    }
+    setStats((s) => ({ ...s, switches: s.switches + 1 }));
+    return next;
+  };
+
+  /** ===================== Validation ===================== */
+  async function validateWord(w: string): Promise<boolean> {
+    if (!INPUT_RE.test(w)) return false;
+    if (!strictDictionary) return true;
+
+    const lw = w.toLowerCase().trim();
+    const lwSing = singularize(lw);
+    const nw = norm(w);
+    const nwSing = singularize(nw);
+    const brandForm = norm(stripCorpSuffixes(w));
+
+    if (dict && (dict.has(lw) || dictNorm.has(nw))) return true;
+    if (countries.has(lw) || countriesNorm.has(nw)) return true;
+    if (names.has(lw) || namesNorm.has(nw)) return true;
+    if (isAnimal(animals, lw) || animalsNorm.has(nw)) return true;
+    if (screens.has(lw) || screensNorm.has(nw)) return true;
+    if (foods.has(lw) || foodsNorm.has(nw) || foods.has(lwSing) || foodsNorm.has(nwSing)) return true;
+    if (brands.has(lw) || brandsNorm.has(nw) || brandsNorm.has(brandForm)) return true;
+
+    return false;
+  }
+
+  /** ===================== Power use (updated) ===================== */
   const usePower = (key: PowerKey) => {
     setPowerCharges((ch) => {
       if ((ch[key] ?? 0) <= 0) return ch;
       const next = { ...ch, [key]: ch[key] - 1 };
+
       try { safePlay(`power_${key}_use` as any); } catch {}
 
       if (key === "country") {
         setUsed(new Set());
         setMsg("NUKE deployed: you may reuse any previous word.");
       } else if (key === "name") {
-        setPauseUntilAnswer(true);
-        setPaused(true);
-        setMsg("Timer frozen until your next valid word!");
+        // NEW: Research — auto-play a valid word on the current chain's last category
+        // Determine target category from the *latest* chain membership (prevCats)
+        let targetCat: ChainKey | null = null;
+        const order: ChainKey[] = ["name","animal","country","food","brand","screen"];
+        for (const c of order) {
+          if (prevCats.has(c)) { targetCat = c; break; }
+        }
+
+        (async () => {
+          const picked = await chooseRandomValidForCategory(targetCat);
+          if (picked) {
+            applyAcceptedWord(picked, { auto: true });
+          } else {
+            // Nothing found: still consumed (as requested)
+            setMsg("Research found nothing useful. (Powerup consumed.)");
+          }
+        })();
       } else if (key === "animal") {
         setSurgeActive(true);
         setMsg("Wild Surge active: +20x until you lose your multiplier.");
@@ -821,23 +1006,14 @@ export default function WordChains() {
         setNextWordAddBonus((b) => b + 50);
         setMsg("Sponsor Boost armed: +50x on the next word!");
       } else if (key === "screen") {
+        // NEW: Montage → FULL FREEZE until next valid word
         setPaused(true);
-        setMsg("Montage: timer frozen for 15s!");
-        setTimeout(() => {
-          if (!pauseUntilAnswerRef.current) setPaused(false);
-        }, 15000);
+        setPauseUntilAnswer(true);
+        setMsg("Montage: timer frozen until your next valid word!");
       } else if (key === "same") {
         setNextWordAddBonus((b) => b + 10);
         setMsg("Mirror Charm armed: +10x on the next word!");
       }
-
-      // Optional UX: auto-collapse mobile accordion after using a power (phones only)
-      try {
-        if (typeof window !== "undefined" && window.innerWidth < 768) {
-          setMobilePowersOpen(false);
-        }
-      } catch {}
-
       return next;
     });
   };
@@ -881,7 +1057,6 @@ export default function WordChains() {
     });
     setPowerBucketsCredited({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0, same: 0 });
 
-    // reset run analytics
     lastAcceptAtRef.current = null;
     deltasRef.current = [];
     peakTotalMultRef.current = 1;
@@ -892,57 +1067,16 @@ export default function WordChains() {
     setPrevCats(new Set());
     setShowNamePrompt(false);
     setPlayerName("");
-
-    // reset mobile accordion
-    setMobilePowersOpen(false);
   };
   const start = () => { setStarted(true); resetRun(); };
 
-  /** ===================== Switching (LINKS freeze) ===================== */
-  const applySwitching = (enteringCats: Set<ChainKey>, next: Record<ChainKey, ChainState>) => {
-    const leaving = new Set<ChainKey>([...prevCats].filter((c) => !enteringCats.has(c)));
-    if (leaving.size === 0) return next;
-    if (links >= 1) {
-      setLinks((l) => { setStats((s) => ({ ...s, linksSpent: s.linksSpent + 1 })); return Math.max(0, l - 1); });
-      leaving.forEach((k) => { next[k] = { ...next[k], frozen: true }; });
-    } else {
-      leaving.forEach((k) => { next[k] = { length: 0, multiplier: 1, frozen: false }; });
-      if (leaving.has("animal")) setSurgeActive(false);
-    }
-    setStats((s) => ({ ...s, switches: s.switches + 1 }));
-    return next;
-  };
-
-  /** ===================== Validation ===================== */
-  async function validateWord(w: string): Promise<boolean> {
-    if (!INPUT_RE.test(w)) return false;
-    if (!strictDictionary) return true;
-
-    const lw = w.toLowerCase().trim();
-    const lwSing = singularize(lw);
-    const nw = norm(w);
-    const nwSing = singularize(nw);
-    const brandForm = norm(stripCorpSuffixes(w));
-
-    if (dict && (dict.has(lw) || dictNorm.has(nw))) return true;
-    if (countries.has(lw) || countriesNorm.has(nw)) return true;
-    if (names.has(lw) || namesNorm.has(nw)) return true;
-    if (isAnimal(animals, lw) || animalsNorm.has(nw)) return true;
-    if (screens.has(lw) || screensNorm.has(nw)) return true;
-    if (foods.has(lw) || foodsNorm.has(nw) || foods.has(lwSing) || foodsNorm.has(nwSing)) return true;
-    if (brands.has(lw) || brandsNorm.has(nw) || brandsNorm.has(brandForm)) return true;
-
-    return false;
-  }
-
-  /** ===================== Submit ===================== */
+  /** ===================== Submit (manual) ===================== */
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const input = (e.target as HTMLFormElement).word as unknown as HTMLInputElement;
     const raw = (input?.value || "").trim();
     if (!raw) return;
 
-    // debug: "?word"
     if (raw.startsWith("?")) {
       const test = raw.slice(1);
       const cats = Array.from(getCategories(test));
@@ -956,11 +1090,11 @@ export default function WordChains() {
     const wl = w.toLowerCase();
     input.value = "";
 
-    if (used.has(wl)) { 
+    if (used.has(wl)) {
       setMsg("Already used.");
       try { safePlay("used"); } catch {}
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
-      return; 
+      return;
     }
     if (last !== "start") {
       if (firstLetter(wl) !== lastLetter(last).toLowerCase()) {
@@ -975,231 +1109,106 @@ export default function WordChains() {
       }
     }
     const ok = await validateWord(w);
-    if (!ok) { 
+    if (!ok) {
       try { vfx.shake(inputDomRef.current || "input[name='word']"); } catch {}
       loseLife("Invalid: Not an official word.");
       return;
     }
 
-    // if we were frozen until next answer, release it now
-    if (pauseUntilAnswer) {
-      setPauseUntilAnswer(false);
-      setPaused(false);
-    }
-
-    // === timing: average ms/word for this run ===
-    const now = Date.now();
-    if (lastAcceptAtRef.current != null) {
-      const dt = now - lastAcceptAtRef.current;
-      if (Number.isFinite(dt) && dt > 0 && dt < 10 * 60 * 1000) {
-        deltasRef.current.push(dt);
-      }
-    }
-    lastAcceptAtRef.current = now;
-
-    // === uninterrupted chain across ANY category ===
-    currentChainRef.current += 1;
-    if (currentChainRef.current > maxChainRef.current) {
-      maxChainRef.current = currentChainRef.current;
-    }
-
-    // same-letter & unique credit
-    const sameLetter = w[0].toLowerCase() === w[w.length - 1].toLowerCase();
-    if (sameLetter) {
-      setSameMult((s) => 1 + (s - 1) + SAME_LETTER_GROWTH);
-      setStats((s) => ({ ...s, sameLetterWords: s.sameLetterWords + 1 }));
-      tryGrantChargeUnique("same", w);
-    } else if (sameMult > 1) setSameMult(1);
-
-    const enteringCats = getCategories(w);
-    let next = { ...chains };
-    enteringCats.forEach((k) => {
-      const c = next[k];
-      next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH), frozen: false };
-      tryGrantChargeUnique(k, w);
-    });
-    next = applySwitching(enteringCats, next);
-    setChains(next);
-    setPrevCats(enteringCats);
-
-    // scoring
-    const catsArr = Array.from(enteringCats);
-    const base = catsArr.length
-      ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1))
-      : CHAIN_BASE.normal;
-
-    const additive = (surgeActive ? 20 : 0) + nextWordAddBonus;
-    const effectiveMult = totalMult + additive;
-    const gained = Math.round(w.length * base * effectiveMult);
-
-    // 🔊 Single-word one-shot
-    playSingleWordOneShot(gained);
-
-    // Update score & total milestone SFX
-    setScore((prev) => {
-      const newTotal = prev + gained;
-      playTotalMilestoneOnce(newTotal);
-      return newTotal;
-    });
-
-    setMsg(
-      `+${gained} points (total ${fmt(effectiveMult)}${
-        nextWordAddBonus > 0 ? ` · +${nextWordAddBonus}x next-word` : ""
-      }${surgeActive ? " · +20x surge" : ""})`
-    );
-
-    try { safePlay("accept"); } catch {}
-    try { stop("warning"); } catch {}
-    warningPlayingRef.current = false;
-    lowWarnTickRef.current = null;
-
-    try {
-      const el = inputDomRef.current;
-      if (el) {
-        const r = el.getBoundingClientRect();
-        vfx.ringBurstAt(r.left + r.width / 2, r.top + r.height / 2);
-        vfx.glowOnce(el);
-      } else {
-        vfx.ringBurstAtFromEl("input[name='word']");
-      }
-    } catch {}
-
-    if (gained >= 2000) {
-      try { vfx.confettiBurst({ power: 2 }); } catch {}
-      try { vfx.shake("#score", 300); } catch {}
-    }
-
-    if (nextWordAddBonus !== 0) setNextWordAddBonus(0);
-
-    // stats (records & per-category streaks)
-    setStats((s) => {
-      const upd: Stats = { ...s, totalWords: s.totalWords + 1, highestWordScore: Math.max(s.highestWordScore, gained) };
-      if (enteringCats.has("animal")) { upd.animals = s.animals + 1; upd.longestAnimalStreak = Math.max(s.longestAnimalStreak, next.animal.length); }
-      if (enteringCats.has("country")) { upd.countries = s.countries + 1; upd.longestCountryStreak = Math.max(s.longestCountryStreak, next.country.length); }
-      if (enteringCats.has("name")) { upd.names = s.names + 1; upd.longestNameStreak = Math.max(s.longestNameStreak, next.name.length); }
-      return upd;
-    });
-
-    // bookkeeping
-    setUsed((u) => new Set(u).add(w.toLowerCase()));
-    setRecent((r) => [w, ...r].slice(0, 30));
-    setLast(w);
-    setTimeLeft(30);
-
-    /** ===== Progress the current missions only ===== */
-    setMissionProgress((mp) => {
-      const nx = { ...mp };
-      currentMissions.forEach((m) => {
-        const id = m.id;
-        const cur = nx[id] ?? 0;
-
-        if (m.owner !== "main") {
-          const inCat = enteringCats.has(m.chain);
-          if (m.kind === "enterChain" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
-          if (m.kind === "reachMult") {
-            const current = next[m.chain].multiplier;
-            nx[id] = Math.min((m as any).target, current);
-          }
-          if (m.kind === "combo") nx[id] = inCat ? Math.min((m as any).target, cur + 1) : 0;
-          if (m.kind === "scoreWord" && inCat && gained >= (m as any).target) nx[id] = (m as any).target;
-          if (m.kind === "validWords" && inCat) nx[id] = Math.min((m as any).target, cur + 1);
-        } else {
-          if (m.kind === "reachSame") {
-            nx[id] = Math.min((m as any).target, sameMult);
-          } else if (m.kind === "totalScore") {
-            nx[id] = Math.min((m as any).target, cur + gained);
-          } else if (m.kind === "sequence") {
-            const seq = (m as any).sequence as ChainKey[];
-            const idx = cur || 0;
-            const need = seq[idx];
-            const matched = need ? enteringCats.has(need) : false;
-            nx[id] = matched ? idx + 1 : (enteringCats.has(seq[0]) ? 1 : 0);
-          }
-        }
-      });
-      return nx;
-    });
+    applyAcceptedWord(w);
   };
 
-  /** ===== Reward & roll-over & unlock gating ===== */
-  useEffect(() => {
-    if (!currentMissions.length) return;
+/** ===== Reward & roll-over & unlock gating ===== */
+useEffect(() => {
+  if (!currentMissions.length) return;
 
-    const justFinished = currentMissions.filter((m) => {
-      const id = m.id;
-      const prog = missionProgress[id] ?? 0;
-      const target = m.owner === "main" && m.kind === "sequence" ? (m as any).sequence.length : (m as any).target;
-      return prog >= target && !completedMissionIds.has(id);
-    });
-    if (!justFinished.length) return;
+  // Which active missions just finished?
+  const justFinished = currentMissions.filter((m) => {
+    const id = m.id;
+    const prog = missionProgress[id] ?? 0;
+    const target =
+      m.owner === "main" && m.kind === "sequence"
+        ? (m as any).sequence.length
+        : (m as any).target;
+    return prog >= target && !completedMissionIds.has(id);
+  });
+  if (!justFinished.length) return;
 
-    const addLinks = justFinished.reduce((sum, m) => sum + (Number((m as any).reward) || 0), 0);
-
-    if (addLinks > 0) {
-      setLinks((x) => {
-        const nx = x + addLinks;
-        setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks }));
-        return nx;
-      });
-
-      const amt = addLinks.toFixed(1);
-      const plural = Math.abs(addLinks - 1) < 1e-9 ? "" : "s";
-      setMsg(`Mission complete! +${amt} LINK${plural}`);
-
-      try { safePlay("mission"); } catch {}
-      try { safePlay("coin"); } catch {}
-      try { vfx.confettiBurst({ power: 1.2 }); } catch {}
-    }
-
-    setCompletedMissionIds((prev) => {
-      const nx = new Set(prev);
-      justFinished.forEach((m) => nx.add(m.id));
+  // Pay rewards
+  const addLinks = justFinished.reduce((sum, m) => sum + (Number((m as any).reward) || 0), 0);
+  if (addLinks > 0) {
+    setLinks((x) => {
+      const nx = x + addLinks;
+      setStats((s) => ({ ...s, linksEarned: s.linksEarned + addLinks }));
       return nx;
     });
+    const amt = addLinks.toFixed(1);
+    const plural = Math.abs(addLinks - 1) < 1e-9 ? "" : "s";
+    setMsg(`Mission complete! +${amt} LINK${plural}`);
+    try { safePlay("mission"); } catch {}
+    try { safePlay("coin"); } catch {}
+    try { vfx.confettiBurst({ power: 1.2 }); } catch {}
+  }
 
+  // Mark these missions as completed (so we don't pay twice)
+  setCompletedMissionIds((prev) => {
+    const nx = new Set(prev);
+    justFinished.forEach((m) => nx.add(m.id));
+    return nx;
+  });
+
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // ADVANCE THE TRACK(S) so the next mission shows immediately
+  setMissionIndex((idx) => {
+    const next = { ...idx };
     justFinished.forEach((m) => {
       const owner = m.owner as ChainKeyOrMain;
-      setMissionIndex((idx) => {
-        const cur = idx[owner] ?? 0;
-        const maxLen = missionTracks[owner].length;
-        const nextIdx = Math.min(cur + 1, maxLen);
-        if (nextIdx >= maxLen) {
-          setCompletedTracks((set0) => {
-            if (set0.has(owner)) return set0;
-            const s = new Set(set0); s.add(owner);
-            return s;
-          });
-        }
-        return { ...idx, [owner]: nextIdx };
-      });
-    });
+      const cur = next[owner] ?? 0;
+      const track = missionTracks[owner];
+      if (!track) return;
+      const newIdx = Math.min(cur + 1, track.length);
+      next[owner] = newIdx;
 
-    const onlyMainUnlocked = unlockOrder.length === 1;
-    if (onlyMainUnlocked && justFinished.some((m) => m.owner === "main")) {
-      unlockRandomCategory();
-      return;
-    }
-    const lastUnlocked = unlockOrder[unlockOrder.length - 1];
-    if (lastUnlocked && lastUnlocked !== "main") {
-      const finishedIdsForLast = justFinished
-        .filter((m) => m.owner === lastUnlocked)
-        .map((m) => m.id);
-
-      if (finishedIdsForLast.length > 0) {
-        const track = missionTracks[lastUnlocked];
-        if (track && track.length > 0) {
-          const firstId = track[0].id;
-          if (finishedIdsForLast.includes(firstId)) {
-            unlockRandomCategory();
-          }
-        }
+      // If this owner’s track is now completed, record it (for +10 base etc.)
+      if (newIdx >= track.length) {
+        setCompletedTracks((set0) => (set0.has(owner) ? set0 : new Set(set0).add(owner)));
       }
+    });
+    return next;
+  });
+  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+  // Unlock logic (same behavior as before)
+  const onlyMainUnlocked = unlockOrder.length === 1;
+  if (onlyMainUnlocked && justFinished.some((m) => m.owner === "main")) {
+    unlockRandomCategory();
+    return;
+  }
+  const lastUnlocked = unlockOrder[unlockOrder.length - 1];
+  if (lastUnlocked && lastUnlocked !== "main") {
+    const track = missionTracks[lastUnlocked];
+    const firstId = track?.[0]?.id;
+    if (firstId && justFinished.some((m) => m.id === firstId)) {
+      unlockRandomCategory();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missionProgress, currentMissions]);
+  }
+}, [
+  missionProgress,
+  currentMissions,
+  completedMissionIds,
+  unlockOrder,
+  unlockRandomCategory,
+  missionTracks,
+  safePlay,
+  vfx,
+  setStats,
+  setLinks,
+  setCompletedTracks,
+]);
+
 
   /** ===================== UI helpers ===================== */
-  const totalLevels = 7; // per track
+  const totalLevels = 7;
   const ownerProgressPct = (owner: ChainKeyOrMain) => {
     const idx = missionIndex[owner] ?? 0;
     const pct = Math.min(100, Math.round((idx / totalLevels) * 100));
@@ -1214,13 +1223,13 @@ export default function WordChains() {
     const seen = uniqueSeen[key]?.size ?? 0;
     const need = POWER_THRESHOLDS[key] || 1;
     const mod = seen % need;
-    const cur = (seen > 0 && mod === 0) ? need : mod; // show full when just charged
+    const cur = (seen > 0 && mod === 0) ? need : mod;
     return { cur, need };
   };
-
   // ===== Reusable powerups grid so desktop & mobile stay in sync =====
   const PowerupsGrid: React.FC = () => (
     <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
+      {/* Countries → NUKE */}
       {(() => { const p = powerProgress("country"); return (
         <PowerRow
           icon="💥"
@@ -1235,20 +1244,24 @@ export default function WordChains() {
           ringClass="ring-purple-400"
         />
       );})()}
+
+      {/* Names → RESEARCH (auto-play a valid word on current chain) */}
       {(() => { const p = powerProgress("name"); return (
         <PowerRow
-          icon="❄️"
-          label="Freeze"
+          icon="🔎"
+          label={"Chat\nGPT"}
           info="Names"
-          available={powerCharges.name}
-          onUse={() => usePower("name")}
-          fillClass={CHAIN_COLORS.name.solid}
-          pct={(p.cur / p.need) * 100}
-          counter={`${p.cur}/${p.need}`}
-          ready={powerCharges.name > 0}
-          ringClass="ring-blue-400"
-        />
-      );})()}
+         available={powerCharges.name}
+    onUse={() => usePower("name")}
+    fillClass={CHAIN_COLORS.name.solid}
+    pct={(p.cur / p.need) * 100}
+    counter={`${p.cur}/${p.need}`}
+    ready={powerCharges.name > 0}
+    ringClass="ring-blue-400"
+  />
+);})()}
+
+      {/* Animals → Wild Surge */}
       {(() => { const p = powerProgress("animal"); return (
         <PowerRow
           icon="🐾"
@@ -1263,6 +1276,8 @@ export default function WordChains() {
           ringClass="ring-green-400"
         />
       );})()}
+
+      {/* Foods → Extra Life */}
       {(() => { const p = powerProgress("food"); return (
         <PowerRow
           icon="🍔"
@@ -1277,6 +1292,8 @@ export default function WordChains() {
           ringClass="ring-amber-400"
         />
       );})()}
+
+      {/* Brands → Sponsor +50x */}
       {(() => { const p = powerProgress("brand"); return (
         <PowerRow
           icon="💼"
@@ -1291,11 +1308,13 @@ export default function WordChains() {
           ringClass="ring-rose-400"
         />
       );})()}
+
+      {/* TV/Movies → Montage (FULL freeze until next word) */}
       {(() => { const p = powerProgress("screen"); return (
         <PowerRow
           icon="🎬"
           label="Montage"
-          info="TV/Movies"
+          info="Full freeze"
           available={powerCharges.screen}
           onUse={() => usePower("screen")}
           fillClass={CHAIN_COLORS.screen.solid}
@@ -1305,6 +1324,8 @@ export default function WordChains() {
           ringClass="ring-teal-400"
         />
       );})()}
+
+      {/* Same-Letter → Mirror Charm */}
       {(() => { const p = powerProgress("same"); return (
         <PowerRow
           icon="🔁"
@@ -1332,7 +1353,12 @@ export default function WordChains() {
       lastTypeAt.current = now;
     }
   };
+
   /** ===================== UI ===================== */
+  // Mobile powerups drawer (collapsible so it doesn’t block gameplay)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const toggleMobileDrawer = () => setMobileDrawerOpen((v) => !v);
+
   return (
     <>
       <div className="grid gap-4 md:gap-6 md:grid-cols-3">
@@ -1386,42 +1412,12 @@ export default function WordChains() {
 
               {/* Chain rows with frozen & active VFX */}
               <div className="grid gap-2 pt-2 text-sm">
-                <ChainRow
-                  k="name"
-                  state={chains.name}
-                  color={CHAIN_COLORS.name}
-                  active={prevCats.has("name")}
-                />
-                <ChainRow
-                  k="animal"
-                  state={chains.animal}
-                  color={CHAIN_COLORS.animal}
-                  active={prevCats.has("animal")}
-                />
-                <ChainRow
-                  k="country"
-                  state={chains.country}
-                  color={CHAIN_COLORS.country}
-                  active={prevCats.has("country")}
-                />
-                <ChainRow
-                  k="food"
-                  state={chains.food}
-                  color={CHAIN_COLORS.food}
-                  active={prevCats.has("food")}
-                />
-                <ChainRow
-                  k="brand"
-                  state={chains.brand}
-                  color={CHAIN_COLORS.brand}
-                  active={prevCats.has("brand")}
-                />
-                <ChainRow
-                  k="screen"
-                  state={chains.screen}
-                  color={CHAIN_COLORS.screen}
-                  active={prevCats.has("screen")}
-                />
+                <ChainRow k="name"   state={chains.name}   color={CHAIN_COLORS.name}   active={prevCats.has("name")} />
+                <ChainRow k="animal" state={chains.animal} color={CHAIN_COLORS.animal} active={prevCats.has("animal")} />
+                <ChainRow k="country"state={chains.country}color={CHAIN_COLORS.country}active={prevCats.has("country")} />
+                <ChainRow k="food"   state={chains.food}   color={CHAIN_COLORS.food}   active={prevCats.has("food")} />
+                <ChainRow k="brand"  state={chains.brand}  color={CHAIN_COLORS.brand}  active={prevCats.has("brand")} />
+                <ChainRow k="screen" state={chains.screen} color={CHAIN_COLORS.screen} active={prevCats.has("screen")} />
                 <div>Same-Letter Bonus: <b>{fmt(sameMult)}</b></div>
               </div>
             </div>
@@ -1559,60 +1555,64 @@ export default function WordChains() {
                 </div>
               </div>
             </div>
-            {/* end started=true block */}
           </>
         )}
       </div>
 
-      {/* ===== Powerups for MOBILE ONLY: collapsible (hidden by default) ===== */}
+      {/* ===== Powerups Dock: mobile collapsible + desktop sticky ===== */}
       {started && dict && (
         <>
-          {/* Toggle Button (mobile) */}
+          {/* Mobile: collapsible drawer to avoid blocking gameplay */}
           <div
-            className="fixed bottom-3 left-0 right-0 z-40 md:hidden flex justify-center"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            className="fixed bottom-0 left-0 right-0 z-40 md:hidden"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
+            role="toolbar"
+            aria-label="Powerups"
           >
-            <button
-              type="button"
-              aria-controls="mobile-powerups"
-              aria-expanded={mobilePowersOpen}
-              onClick={() => setMobilePowersOpen((s) => !s)}
-              className={[
-                "rounded-full px-4 py-2 shadow-xl border border-gray-200 bg-white/90 backdrop-blur-md",
-                "text-sm font-semibold flex items-center gap-2"
-              ].join(" ")}
-            >
-              <span>Powerups</span>
-              <span className={`transition-transform ${mobilePowersOpen ? "rotate-180" : ""}`} aria-hidden>▾</span>
-            </button>
+            <div className="mx-auto w-full max-w-[1000px] px-3 pb-2">
+              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl overflow-hidden">
+                {/* Handle / Header */}
+                <button
+                  className="w-full px-4 py-2 flex items-center justify-between"
+                  onClick={toggleMobileDrawer}
+                  aria-expanded={mobileDrawerOpen}
+                  aria-controls="wc-mobile-powerups"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Powerups</span>
+                    <span className="text-xs text-gray-500">Unique words charge these</span>
+                  </div>
+                  <span className="text-xl leading-none select-none">{mobileDrawerOpen ? "▾" : "▴"}</span>
+                </button>
+
+                {/* Collapsible body */}
+                <div
+                  id="wc-mobile-powerups"
+                  className="transition-[max-height,opacity] duration-300 ease-out"
+                  style={{
+                    maxHeight: mobileDrawerOpen ? 600 : 0,
+                    opacity: mobileDrawerOpen ? 1 : 0
+                  }}
+                >
+                  <div className="px-3 pb-3">
+                    <PowerupsGrid />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Collapsible Sheet (mobile) */}
-          <div
-            id="mobile-powerups"
-            className={[
-              "fixed left-0 right-0 z-40 md:hidden overflow-hidden transition-[max-height] duration-300 ease-in-out",
-              "mx-auto w-full max-w-[1000px]",
-            ].join(" ")}
-            style={{
-              bottom: 0,
-              maxHeight: mobilePowersOpen ? "60vh" : "0px",
-              paddingBottom: mobilePowersOpen ? "max(env(safe-area-inset-bottom, 0px), 8px)" : 0
-            }}
-            role="region"
-            aria-label="Mobile Powerups Panel"
-          >
-            <div className="px-3 pb-2 pt-2">
-              <div className="rounded-2xl border border-gray-200 bg-white/95 backdrop-blur-md shadow-2xl">
+          {/* Spacer is tiny when collapsed; larger when expanded */}
+          <div className={["md:hidden transition-[height] duration-300",
+            mobileDrawerOpen ? "h-[220px]" : "h-[44px]"].join(" ")} />
+
+          {/* Desktop/Tablet: original sticky presentation (unchanged) */}
+          <div className="hidden md:block sticky bottom-2 z-40 mt-4">
+            <div className="mx-auto w-[min(100%,1000px)] px-3">
+              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
                 <div className="px-3 py-2 flex items-center justify-between">
                   <div className="text-sm font-semibold">Powerups</div>
-                  <button
-                    type="button"
-                    className="text-xs text-gray-600 hover:underline"
-                    onClick={() => setMobilePowersOpen(false)}
-                  >
-                    Close
-                  </button>
+                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
                 </div>
                 <div className="px-3 pb-3">
                   <PowerupsGrid />
@@ -1620,28 +1620,9 @@ export default function WordChains() {
               </div>
             </div>
           </div>
-
-          {/* Small spacer so the toggle doesn’t cover content (only mobile) */}
-          <div className="h-[56px] md:hidden" />
         </>
       )}
 
-      {/* ===== Desktop/Tablet: original sticky presentation (unchanged) ===== */}
-      {started && dict && (
-        <div className="hidden md:block sticky bottom-2 z-40 mt-4">
-          <div className="mx-auto w-[min(100%,1000px)] px-3">
-            <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
-              <div className="px-3 py-2 flex items-center justify-between">
-                <div className="text-sm font-semibold">Powerups</div>
-                <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
-              </div>
-              <div className="px-3 pb-3">
-                <PowerupsGrid />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Local styles for ice & active glow */}
       <style jsx global>{`
   /* ===== active glow on category switch ===== */
@@ -1652,9 +1633,6 @@ export default function WordChains() {
   }
   .wc-active-glow { animation: wcPulse 1.4s ease-out 1; }
 
-  /* gentle glow cue for “ready” powerups (referenced by PowerRow) */
-  .wc-glow { animation: wcPulse 1.1s ease-out 1; }
-
   /* ===== ICE OVERLAY LAYERS ===== */
   .wc-ice-wrap {
     position: absolute; inset: 0;
@@ -1662,7 +1640,6 @@ export default function WordChains() {
     overflow: hidden; pointer-events: none; z-index: 1;
   }
 
-  /* cool rim so the “frozen” state reads at a glance */
   .wc-ice-rim {
     position: absolute; inset: 0; border-radius: inherit;
     box-shadow:
@@ -1673,7 +1650,6 @@ export default function WordChains() {
     opacity: .95;
   }
 
-  /* tint that grows in using a conic mask */
   .wc-ice-tint {
     position: absolute; inset: 0; border-radius: inherit;
     background:
@@ -1689,7 +1665,6 @@ export default function WordChains() {
     to   { mask: conic-gradient(from 270deg at 0% 100%, transparent 360deg, black 360deg); }
   }
 
-  /* subtle crystalline noise drifting */
   .wc-ice-noise {
     position: absolute; inset: 0; opacity: .35; mix-blend-mode: overlay;
     background-size: 240px 240px;
@@ -1705,7 +1680,6 @@ export default function WordChains() {
     to   { transform: translate3d(-6px,-4px,0) scale(1.02); }
   }
 
-  /* animated crack field — kept BLUE and higher contrast */
   .wc-ice-cracks {
     position: absolute; inset: 0; opacity: .7;
     background-repeat: repeat; background-size: 220px 140px;
@@ -1726,7 +1700,6 @@ export default function WordChains() {
   }
   @keyframes wcCrackFade { from { opacity: 0; } to { opacity: .7; } }
 
-  /* sparkles drifting up */
   .wc-ice-sparkles { position: absolute; inset: 0; overflow: hidden; }
   .wc-ice-sparkle {
     position: absolute; width: 6px; height: 6px; border-radius: 999px;
@@ -1759,7 +1732,6 @@ function thawBurstAt(
   opts?: { shards?: number; durationMs?: number }
 ) {
   if (!target) return;
-
   const rect = target.getBoundingClientRect();
   const canvas = document.createElement("canvas");
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1773,25 +1745,20 @@ function thawBurstAt(
   canvas.style.left = "0";
   canvas.style.top = "0";
   canvas.style.pointerEvents = "none";
-  canvas.style.zIndex = "2"; // above frost layers
-
-  // mount canvas inside the row container
+  canvas.style.zIndex = "2";
   (target.style as CSSStyleDeclaration).position ||= "relative";
   target.appendChild(canvas);
 
   const ctx2d = canvas.getContext("2d");
   if (!ctx2d) { canvas.remove(); return; }
-  const C = ctx2d as CanvasRenderingContext2D; // non-null binding
+  const C = ctx2d as CanvasRenderingContext2D;
   C.scale(dpr, dpr);
 
   const N = Math.max(14, Math.min(48, (opts?.shards ?? 26)));
   const dur = Math.max(300, Math.min(1200, opts?.durationMs ?? 650));
   const t0 = performance.now();
 
-  type Shard = {
-    x: number; y: number; vx: number; vy: number;
-    rot: number; vrot: number; r: number; a: number; hue: number;
-  };
+  type Shard = { x: number; y: number; vx: number; vy: number; rot: number; vrot: number; r: number; a: number; hue: number; };
   const shards: Shard[] = [];
   for (let i = 0; i < N; i++) {
     const a = (Math.PI * 2 * i) / N + (Math.random() * 0.7 - 0.35);
@@ -1809,7 +1776,7 @@ function thawBurstAt(
   }
 
   function step(now: number) {
-    const t = (now - t0) / dur; // 0..1
+    const t = (now - t0) / dur;
     if (t >= 1) { canvas.remove(); return; }
 
     C.clearRect(0, 0, w, h);
@@ -1819,7 +1786,7 @@ function thawBurstAt(
     for (const s of shards) {
       s.x += s.vx * (1 / 60);
       s.y += s.vy * (1 / 60);
-      s.vy += 240 * (1 / 60); // gravity-ish
+      s.vy += 240 * (1 / 60);
       s.rot += s.vrot * (1 / 60);
       s.a = Math.max(0, 1 - t);
 
@@ -1845,7 +1812,6 @@ function thawBurstAt(
   requestAnimationFrame(step);
 }
 
-
 /** ===== ChainRow: one line per category with frozen overlay & thaw burst ===== */
 function ChainRow({
   k,
@@ -1862,7 +1828,6 @@ function ChainRow({
   const prevFrozen = React.useRef(state.frozen);
   const [thawing, setThawing] = React.useState(false);
 
-  // Play one-shot burst + flash when frozen -> unfrozen
   React.useEffect(() => {
     const was = prevFrozen.current;
     const now = state.frozen;
@@ -1886,10 +1851,8 @@ function ChainRow({
         state.frozen ? "shadow-inner" : "",
       ].join(" ")}
     >
-      {/* Strong frozen overlay while frozen */}
       {state.frozen && <FrozenOverlay />}
 
-      {/* Quick thaw flash when unfreezing */}
       {thawing && <div className="wc-thaw-flash" aria-hidden />}
 
       <div className="relative z-10 flex items-center justify-between gap-2">
@@ -1911,15 +1874,10 @@ function ChainRow({
 function FrozenOverlay() {
   return (
     <div className="wc-ice-wrap" aria-hidden>
-      {/* frosty rim around the card */}
       <div className="wc-ice-rim" />
-      {/* blue-ish tint that grows in */}
       <div className="wc-ice-tint" />
-      {/* crystalline noise for texture */}
       <div className="wc-ice-noise" />
-      {/* animated cracks */}
       <div className="wc-ice-cracks" />
-      {/* sparkles that float up */}
       <div className="wc-ice-sparkles">
         {Array.from({ length: 16 }).map((_, i) => (
           <span key={i} className="wc-ice-sparkle" style={{ ['--d' as any]: `${i * 0.1}s` }} />
@@ -1997,8 +1955,9 @@ function PowerRow({
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm font-semibold tabular-nums">{available}</span>
-          </div>
+  <span className="ml-1 text-sm font-semibold tabular-nums">{available}</span>
+</div>
+
         </div>
 
         {(info || counter) && (
