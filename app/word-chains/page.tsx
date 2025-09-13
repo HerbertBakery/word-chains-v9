@@ -101,6 +101,7 @@ async function postRunToLeaderboard(summary: {
     return { ok: false, status: 0, msg: "Network error saving score." };
   }
 }
+
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
@@ -214,6 +215,7 @@ export default function WordChains() {
       });
     })();
   }, []);
+
   /** ===================== Core game state ===================== */
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -330,9 +332,6 @@ export default function WordChains() {
   };
 
   /** ==== Single-word one-shot SFX (plays once per run) ==== */
-  // Map each single-word point tier to its own sound key.
-  // Keep your existing "bigword" for 2000; use your real keys for the others when you add them.
-  // If a key doesn't exist yet, the try/catch below prevents crashes.
   const SINGLE_WORD_SFX: Array<{ threshold: number; key: string }> = [
     { threshold: 1000,  key: "word_1k" },
     { threshold: 2000,  key: "bigword" }, // your existing asset
@@ -358,24 +357,17 @@ export default function WordChains() {
 
   /** Plays the highest *new* milestone crossed this turn, marks all lower as done */
   const playTotalMilestoneOnce = useCallback((totalAfter: number) => {
-    // milestones newly eligible (not yet played)
     const hits = TOTAL_SCORE_SFX.filter(t => totalAfter >= t.threshold && !playedTotalMilestonesRef.current.has(t.threshold));
     if (!hits.length) return;
-
-    // choose highest crossed milestone only (avoid stacking sounds)
     const top = hits.reduce((a, b) => (a.threshold > b.threshold ? a : b));
-
-    // mark this and all lower milestones as played so they won't chime later
     for (const t of TOTAL_SCORE_SFX) {
       if (t.threshold <= top.threshold) playedTotalMilestonesRef.current.add(t.threshold);
     }
-
     try { (safePlay as any)(top.key); } catch {}
   }, [safePlay]);
 
   // Highest-tier-only per word; plays the tier’s sound once per run
   const playSingleWordOneShot = useCallback((points: number) => {
-    // pick the highest tier you reached with this word
     let best: { threshold: number; key: string } | undefined;
     for (const t of SINGLE_WORD_SFX) {
       if (points >= t.threshold) {
@@ -383,11 +375,8 @@ export default function WordChains() {
       }
     }
     if (!best) return;
-
-    // only play if this tier's sound hasn't played yet this run
     if (playedSingleWordKeysRef.current.has(best.key)) return;
     playedSingleWordKeysRef.current.add(best.key);
-
     try { (safePlay as any)(best.key); } catch {}
   }, [safePlay]);
 
@@ -434,14 +423,10 @@ export default function WordChains() {
 
   useEffect(() => {
     if (!started) return;                 // only care while game is running
-
-    // If not at exactly 0, clear the latch and exit
     if (timeLeft !== 0) {
       timeoutLatchRef.current = false;
       return;
     }
-
-    // At 0 → ensure we only fire once
     if (timeoutLatchRef.current) return;
     timeoutLatchRef.current = true;
 
@@ -449,19 +434,18 @@ export default function WordChains() {
     try { (stop as any)("warning"); } catch {}
     warningPlayingRef.current = false;
 
-    // Stop the ticking interval; we’ll reset/restart below (if still running)
+    // Stop the ticking interval
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Deduct exactly one life (your loseLife plays SFX unless it's final)
+    // Deduct one life
     loseLife("Time's up!");
 
-    // If the run is still alive after losing a life, reset the clock to 30 and resume ticking
-    // Use refs to avoid stale values on this microtask turn.
+    // If still alive, reset clock & resume
     setTimeout(() => {
-      if (!startedRef.current) return;    // endGame may have run
+      if (!startedRef.current) return;
       setTimeLeft(30);
       if (!pausedRef.current) {
         if (timerRef.current) clearInterval(timerRef.current);
@@ -470,7 +454,6 @@ export default function WordChains() {
           1000
         );
       }
-      // allow future timeouts
       timeoutLatchRef.current = false;
     }, 0);
   }, [timeLeft, started, stop]);
@@ -478,11 +461,9 @@ export default function WordChains() {
   /* ===== Low-timer warning SFX (looping, single instance) ===== */
   useEffect(() => {
     const inDanger = started && !paused && timeLeft > 0 && timeLeft <= 5;
-
     if (inDanger && !warningPlayingRef.current) {
       try { (play as any)("warning", { loop: true, volume: 0.5 }); warningPlayingRef.current = true; } catch {}
     }
-
     if (!inDanger && warningPlayingRef.current) {
       try { (stop as any)("warning"); } catch {}
       warningPlayingRef.current = false;
@@ -505,7 +486,6 @@ export default function WordChains() {
   }, [totalMult, surgeActive, nextWordAddBonus]);
 
   // (Optional) tighter "lifeLost" playback that skips tiny leading silence (~60ms)
-  // If you already added this earlier, keep your existing helper and skip this one.
   const playLifeLostTight = () => {
     const off = 0.06; // 60ms
     try { (play as any)("lifeLost", { seek: off, offset: off, startAt: off }); }
@@ -522,12 +502,10 @@ export default function WordChains() {
       if (typeof warningPlayingRef !== "undefined") warningPlayingRef.current = false;
 
       if (next <= 0) {
-        // FINAL life: do NOT play the "lifeLost" sound; go straight to game over SFX via endGame
         endGame(reason);
         return 0;
       }
 
-      // Non-final life: play the lose-life sound, show message, and shake the score
       setMsg(`${reason} (-1 life)`);
       try { playLifeLostTight(); } catch { try { (play as any)("lifeLost"); } catch {} }
       try { vfx.shake("#score", 400); } catch {}
@@ -585,14 +563,11 @@ export default function WordChains() {
     try { prevLocal = JSON.parse(localStorage.getItem("wc_stats") || "{}") || {}; } catch {}
 
     const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-
     const sessionsNow = num(localStorage.getItem("wc_total_sessions")); // already incremented above
 
     const mergedAllTime = {
-      // keep any extra fields that may exist
       ...prevLocal,
-
-      // -------- accumulators (add) --------
+      // accumulators
       totalWords:        num(prevLocal.totalWords)        + num(stats.totalWords),
       animals:           num(prevLocal.animals)           + num(stats.animals),
       countries:         num(prevLocal.countries)         + num(stats.countries),
@@ -601,21 +576,19 @@ export default function WordChains() {
       switches:          num(prevLocal.switches)          + num(stats.switches),
       linksEarned:       num(prevLocal.linksEarned)       + num(stats.linksEarned),
       linksSpent:        num(prevLocal.linksSpent)        + num(stats.linksSpent),
-
-      // -------- records (max) --------
+      // records
       highestWordScore:    Math.max(num(prevLocal.highestWordScore),    num(stats.highestWordScore)),
       longestAnimalStreak: Math.max(num(prevLocal.longestAnimalStreak), num(stats.longestAnimalStreak)),
       longestCountryStreak:Math.max(num(prevLocal.longestCountryStreak),num(stats.longestCountryStreak)),
       longestNameStreak:   Math.max(num(prevLocal.longestNameStreak),   num(stats.longestNameStreak)),
       longestChain:        Math.max(num(prevLocal.longestChain),         num(longestChainThisRun), num(stats.longestChain)),
       highestMultiplier:   Math.max(num(prevLocal.highestMultiplier),    num(highestMultThisRun)),
-
-      // -------- session/unique (best-effort) --------
+      // session/unique
       totalSessions: sessionsNow,
       uniqueWords:   Math.max(num(prevLocal.uniqueWords), num(uniqueWordsThisRun)),
     };
 
-    // Persist local all-time for the stats page if server data isn't available
+    // Persist for stats page
     persistStats(mergedAllTime);
 
     // Send per-run summary to server (if signed in)
@@ -685,33 +658,18 @@ export default function WordChains() {
   const buildCategoryTrack = (chain: ChainKey): Mission[] => {
     const R = 1;
     return [
-      // 1) Enter the category once
       { id: newId(), owner: chain, chain, kind: "enterChain", target: 1,   progress: 0, reward: R },
-
-      // 2) Chain two in a row
       { id: newId(), owner: chain, chain, kind: "combo",      target: 2,   progress: 0, reward: R },
-
-      // 3) Reach category multiplier x2.00
       { id: newId(), owner: chain, chain, kind: "reachMult",  target: 2.0, progress: 0, reward: R },
-
-      // 4) Score >= 500 with a word in this category
       { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 500, progress: 0, reward: R },
-
-      // 5) Chain three in a row
       { id: newId(), owner: chain, chain, kind: "combo",      target: 3,   progress: 0, reward: R },
-
-      // 6) Reach category multiplier x4.00
       { id: newId(), owner: chain, chain, kind: "reachMult",  target: 4.0, progress: 0, reward: R },
-
-      // 7) Score >= 2000 with a word in this category
       { id: newId(), owner: chain, chain, kind: "scoreWord",  target: 2000, progress: 0, reward: R },
     ];
   };
 
   const buildMainTrack = (): Mission[] => {
     const R = 1;
-
-    // NOTE: "small letter" interpreted as "same-letter".
     return [
       { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 250,  progress: 0, reward: R },
       { id: newId(), owner: "main", chain: "main", kind: "totalScore", target: 1000, progress: 0, reward: R },
@@ -745,7 +703,7 @@ export default function WordChains() {
   const lockedCategories = useMemo(() => allCategories.filter((c) => !unlocked.has(c)), [unlocked]);
 
   // Track mission progress for the *current* mission of each owner
-  const [missionProgress, setMissionProgress] = useState<Record<string, number>>({}); // key by mission.id
+  const [missionProgress, setMissionProgress] = useState<Record<string, number>>({});
   const currentMissions = useMemo(() => {
     const list: Mission[] = [];
     unlocked.forEach((owner) => {
@@ -768,7 +726,6 @@ export default function WordChains() {
     });
     setUnlockOrder((o) => [...o, owner]);
     setMsg(`New category unlocked: ${CHAIN_COLORS[owner].label}!`);
-    // SFX + subtle confetti
     try { safePlay("unlock"); } catch {}
     try { vfx.confettiBurst({ power: 0.8 }); } catch {}
   };
@@ -778,7 +735,7 @@ export default function WordChains() {
     if (remaining.length === 0) return;
     const pick = remaining[Math.floor(Math.random() * remaining.length)];
     appendUnlock(pick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unlocked]);
 
   /** ===================== Powerups (unique-word charges) ===================== */
@@ -798,15 +755,17 @@ export default function WordChains() {
     name: new Set(), animal: new Set(), country: new Set(), food: new Set(), brand: new Set(), screen: new Set(), same: new Set()
   });
 
+  // ===== Mobile powerups accordion state (collapsed by default) =====
+  const [mobilePowersOpen, setMobilePowersOpen] = useState(false);
+
   const tryGrantChargeUnique = (key: PowerKey, rawWord: string) => {
     const need = POWER_THRESHOLDS[key];
     if (!need) return;
-
     const wNorm = norm(rawWord);
 
     setUniqueSeen((cur) => {
       const prevSet = cur[key] ?? new Set<string>();
-      if (prevSet.has(wNorm)) return cur; // no double credit
+      if (prevSet.has(wNorm)) return cur;
 
       const prevCount = prevSet.size;
       const nextSet = new Set(prevSet);
@@ -827,7 +786,6 @@ export default function WordChains() {
             return nx;
           });
           setMsg(`Powerup charged: ${key === "same" ? "Same-Letter" : CHAIN_COLORS[key].label} (+0.5 LINK)`);
-          // SFX/VFX for "ready" + coin
           try { safePlay("coin"); } catch {}
           try { safePlay(`power_${key}_ready` as any); } catch {}
           try { vfx.ringBurstAtFromEl(inputDomRef.current || "input[name='word']"); } catch {}
@@ -844,14 +802,12 @@ export default function WordChains() {
     setPowerCharges((ch) => {
       if ((ch[key] ?? 0) <= 0) return ch;
       const next = { ...ch, [key]: ch[key] - 1 };
-      // SFX for use
       try { safePlay(`power_${key}_use` as any); } catch {}
 
       if (key === "country") {
         setUsed(new Set());
         setMsg("NUKE deployed: you may reuse any previous word.");
       } else if (key === "name") {
-        // Freeze until next valid answer
         setPauseUntilAnswer(true);
         setPaused(true);
         setMsg("Timer frozen until your next valid word!");
@@ -874,6 +830,14 @@ export default function WordChains() {
         setNextWordAddBonus((b) => b + 10);
         setMsg("Mirror Charm armed: +10x on the next word!");
       }
+
+      // Optional UX: auto-collapse mobile accordion after using a power (phones only)
+      try {
+        if (typeof window !== "undefined" && window.innerWidth < 768) {
+          setMobilePowersOpen(false);
+        }
+      } catch {}
+
       return next;
     });
   };
@@ -890,7 +854,6 @@ export default function WordChains() {
     setPaused(false);
     setSameMult(1);
     setNextWordAddBonus(0);
-    // clear one-shot single-word SFX for the new run
     playedSingleWordKeysRef.current.clear();
     playedTotalMilestonesRef.current.clear();
 
@@ -929,6 +892,9 @@ export default function WordChains() {
     setPrevCats(new Set());
     setShowNamePrompt(false);
     setPlayerName("");
+
+    // reset mobile accordion
+    setMobilePowersOpen(false);
   };
   const start = () => { setStarted(true); resetRun(); };
 
@@ -1026,7 +992,7 @@ export default function WordChains() {
     if (lastAcceptAtRef.current != null) {
       const dt = now - lastAcceptAtRef.current;
       if (Number.isFinite(dt) && dt > 0 && dt < 10 * 60 * 1000) {
-        deltasRef.current.push(dt); // cap 10 min to ignore AFK
+        deltasRef.current.push(dt);
       }
     }
     lastAcceptAtRef.current = now;
@@ -1050,11 +1016,11 @@ export default function WordChains() {
     enteringCats.forEach((k) => {
       const c = next[k];
       next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH), frozen: false };
-      tryGrantChargeUnique(k, w); // unique per category
+      tryGrantChargeUnique(k, w);
     });
     next = applySwitching(enteringCats, next);
     setChains(next);
-    setPrevCats(enteringCats); // used to highlight active chain rows
+    setPrevCats(enteringCats);
 
     // scoring
     const catsArr = Array.from(enteringCats);
@@ -1066,14 +1032,13 @@ export default function WordChains() {
     const effectiveMult = totalMult + additive;
     const gained = Math.round(w.length * base * effectiveMult);
 
-    // 🔊 Single-word one-shot (highest tier for this word; plays once per run)
+    // 🔊 Single-word one-shot
     playSingleWordOneShot(gained);
 
-    // Use the updater form to compute the new total score reliably,
-    // and fire the total-milestone sound *after* we know the new total.
+    // Update score & total milestone SFX
     setScore((prev) => {
       const newTotal = prev + gained;
-      playTotalMilestoneOnce(newTotal); // 🔊 total milestone (once per run)
+      playTotalMilestoneOnce(newTotal);
       return newTotal;
     });
 
@@ -1083,10 +1048,7 @@ export default function WordChains() {
       }${surgeActive ? " · +20x surge" : ""})`
     );
 
-    // accept sfx + subtle ring/glow at input
     try { safePlay("accept"); } catch {}
-
-    // HARD stop the heartbeat immediately on a correct word
     try { stop("warning"); } catch {}
     warningPlayingRef.current = false;
     lowWarnTickRef.current = null;
@@ -1102,7 +1064,6 @@ export default function WordChains() {
       }
     } catch {}
 
-    // big single-word score celebration (>=2000)
     if (gained >= 2000) {
       try { vfx.confettiBurst({ power: 2 }); } catch {}
       try { vfx.shake("#score", 300); } catch {}
@@ -1172,7 +1133,6 @@ export default function WordChains() {
     });
     if (!justFinished.length) return;
 
-    // Sum the rewards on the finished missions (now 1.0 each)
     const addLinks = justFinished.reduce((sum, m) => sum + (Number((m as any).reward) || 0), 0);
 
     if (addLinks > 0) {
@@ -1182,12 +1142,10 @@ export default function WordChains() {
         return nx;
       });
 
-      // Friendly formatting + pluralization
       const amt = addLinks.toFixed(1);
       const plural = Math.abs(addLinks - 1) < 1e-9 ? "" : "s";
       setMsg(`Mission complete! +${amt} LINK${plural}`);
 
-      // SFX/VFX for mission complete + coin (still plays on any amount, 0.5 or 1)
       try { safePlay("mission"); } catch {}
       try { safePlay("coin"); } catch {}
       try { vfx.confettiBurst({ power: 1.2 }); } catch {}
@@ -1237,7 +1195,7 @@ export default function WordChains() {
         }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missionProgress, currentMissions]);
 
   /** ===================== UI helpers ===================== */
@@ -1263,7 +1221,6 @@ export default function WordChains() {
   // ===== Reusable powerups grid so desktop & mobile stay in sync =====
   const PowerupsGrid: React.FC = () => (
     <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-      {/* Countries → NUKE */}
       {(() => { const p = powerProgress("country"); return (
         <PowerRow
           icon="💥"
@@ -1278,8 +1235,6 @@ export default function WordChains() {
           ringClass="ring-purple-400"
         />
       );})()}
-
-      {/* Names → Freeze */}
       {(() => { const p = powerProgress("name"); return (
         <PowerRow
           icon="❄️"
@@ -1294,8 +1249,6 @@ export default function WordChains() {
           ringClass="ring-blue-400"
         />
       );})()}
-
-      {/* Animals → Wild Surge */}
       {(() => { const p = powerProgress("animal"); return (
         <PowerRow
           icon="🐾"
@@ -1310,8 +1263,6 @@ export default function WordChains() {
           ringClass="ring-green-400"
         />
       );})()}
-
-      {/* Foods → Extra Life */}
       {(() => { const p = powerProgress("food"); return (
         <PowerRow
           icon="🍔"
@@ -1326,8 +1277,6 @@ export default function WordChains() {
           ringClass="ring-amber-400"
         />
       );})()}
-
-      {/* Brands → Sponsor +50x */}
       {(() => { const p = powerProgress("brand"); return (
         <PowerRow
           icon="💼"
@@ -1342,8 +1291,6 @@ export default function WordChains() {
           ringClass="ring-rose-400"
         />
       );})()}
-
-      {/* TV/Movies → Montage */}
       {(() => { const p = powerProgress("screen"); return (
         <PowerRow
           icon="🎬"
@@ -1358,8 +1305,6 @@ export default function WordChains() {
           ringClass="ring-teal-400"
         />
       );})()}
-
-      {/* Same-Letter → Mirror Charm */}
       {(() => { const p = powerProgress("same"); return (
         <PowerRow
           icon="🔁"
@@ -1380,7 +1325,6 @@ export default function WordChains() {
   /** ===================== Typing SFX (gentle throttle, non-blocking) ===================== */
   const lastTypeAt = useRef<number>(0);
   const onTypeKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Only for actual character keys
     if (e.key.length !== 1) return;
     const now = performance.now();
     if (now - lastTypeAt.current > 70) {
@@ -1388,7 +1332,6 @@ export default function WordChains() {
       lastTypeAt.current = now;
     }
   };
-
   /** ===================== UI ===================== */
   return (
     <>
@@ -1531,7 +1474,6 @@ export default function WordChains() {
                 </div>
 
                 <div className="space-y-3">
-                  {/* ...missions mapping stays unchanged... */}
                   {unlockOrder.map((owner) => {
                     const idx = missionIndex[owner] ?? 0;
                     const track = missionTracks[owner];
@@ -1563,7 +1505,6 @@ export default function WordChains() {
                       : (m as any).target;
                     const bar = Math.min(100, (Number(progressCurrent) / Number(target)) * 100);
 
-                    // pretty display for counters (clamp decimals for reachMult)
                     const displayCurrent = isReachMult ? Number(progressCurrent).toFixed(2) : String(progressCurrent);
                     const displayTarget  = isReachMult ? Number(target).toFixed(2) : String(target);
 
@@ -1610,7 +1551,6 @@ export default function WordChains() {
                     );
                   })}
 
-                  {/* Locked hint */}
                   {lockedCategories.length > 0 && (
                     <div className="text-xs text-gray-600">
                       <b>{lockedCategories.length}</b> categor{lockedCategories.length === 1 ? "y is" : "ies are"} locked — finish the Level 1 mission of the latest unlocked category to reveal the next.
@@ -1624,21 +1564,55 @@ export default function WordChains() {
         )}
       </div>
 
-      {/* ===== Powerups Dock: fixed on mobile (safe-area), sticky on md+ ===== */}
+      {/* ===== Powerups for MOBILE ONLY: collapsible (hidden by default) ===== */}
       {started && dict && (
         <>
-          {/* Mobile: fixed dock */}
+          {/* Toggle Button (mobile) */}
           <div
-            className="fixed bottom-0 left-0 right-0 z-40 md:hidden"
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
-            role="toolbar"
-            aria-label="Powerups"
+            className="fixed bottom-3 left-0 right-0 z-40 md:hidden flex justify-center"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           >
-            <div className="mx-auto w-full max-w-[1000px] px-3 pb-2 pt-2">
-              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+            <button
+              type="button"
+              aria-controls="mobile-powerups"
+              aria-expanded={mobilePowersOpen}
+              onClick={() => setMobilePowersOpen((s) => !s)}
+              className={[
+                "rounded-full px-4 py-2 shadow-xl border border-gray-200 bg-white/90 backdrop-blur-md",
+                "text-sm font-semibold flex items-center gap-2"
+              ].join(" ")}
+            >
+              <span>Powerups</span>
+              <span className={`transition-transform ${mobilePowersOpen ? "rotate-180" : ""}`} aria-hidden>▾</span>
+            </button>
+          </div>
+
+          {/* Collapsible Sheet (mobile) */}
+          <div
+            id="mobile-powerups"
+            className={[
+              "fixed left-0 right-0 z-40 md:hidden overflow-hidden transition-[max-height] duration-300 ease-in-out",
+              "mx-auto w-full max-w-[1000px]",
+            ].join(" ")}
+            style={{
+              bottom: 0,
+              maxHeight: mobilePowersOpen ? "60vh" : "0px",
+              paddingBottom: mobilePowersOpen ? "max(env(safe-area-inset-bottom, 0px), 8px)" : 0
+            }}
+            role="region"
+            aria-label="Mobile Powerups Panel"
+          >
+            <div className="px-3 pb-2 pt-2">
+              <div className="rounded-2xl border border-gray-200 bg-white/95 backdrop-blur-md shadow-2xl">
                 <div className="px-3 py-2 flex items-center justify-between">
                   <div className="text-sm font-semibold">Powerups</div>
-                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+                  <button
+                    type="button"
+                    className="text-xs text-gray-600 hover:underline"
+                    onClick={() => setMobilePowersOpen(false)}
+                  >
+                    Close
+                  </button>
                 </div>
                 <div className="px-3 pb-3">
                   <PowerupsGrid />
@@ -1647,24 +1621,26 @@ export default function WordChains() {
             </div>
           </div>
 
-          {/* Spacer so mobile content isn't hidden behind the dock */}
-          <div className="h-[92px] md:hidden" />
-
-          {/* Desktop/Tablet: original sticky presentation */}
-          <div className="hidden md:block sticky bottom-2 z-40 mt-4">
-            <div className="mx-auto w-[min(100%,1000px)] px-3">
-              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
-                <div className="px-3 py-2 flex items-center justify-between">
-                  <div className="text-sm font-semibold">Powerups</div>
-                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
-                </div>
-                <div className="px-3 pb-3">
-                  <PowerupsGrid />
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Small spacer so the toggle doesn’t cover content (only mobile) */}
+          <div className="h-[56px] md:hidden" />
         </>
+      )}
+
+      {/* ===== Desktop/Tablet: original sticky presentation (unchanged) ===== */}
+      {started && dict && (
+        <div className="hidden md:block sticky bottom-2 z-40 mt-4">
+          <div className="mx-auto w-[min(100%,1000px)] px-3">
+            <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+              <div className="px-3 py-2 flex items-center justify-between">
+                <div className="text-sm font-semibold">Powerups</div>
+                <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+              </div>
+              <div className="px-3 pb-3">
+                <PowerupsGrid />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {/* Local styles for ice & active glow */}
       <style jsx global>{`
@@ -1675,6 +1651,9 @@ export default function WordChains() {
     100% { box-shadow: 0 0 0 0 rgba(0, 150, 255, 0); }
   }
   .wc-active-glow { animation: wcPulse 1.4s ease-out 1; }
+
+  /* gentle glow cue for “ready” powerups (referenced by PowerRow) */
+  .wc-glow { animation: wcPulse 1.1s ease-out 1; }
 
   /* ===== ICE OVERLAY LAYERS ===== */
   .wc-ice-wrap {
@@ -1770,9 +1749,6 @@ export default function WordChains() {
     100% { opacity: 0; transform: translateY(-140%) scale(1); }
   }
 `}</style>
-
-
-
     </>
   );
 } // ← END WordChains component
