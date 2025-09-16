@@ -1,7 +1,7 @@
 // app/layout.tsx
 import "./globals.css";
 import PageShell from "./components/PageShell";
-import Header from "./components/Header";             // Use capital H
+import Header from "./components/header";             // Use capital H
 import Providers from "./providers";
 import { VfxProvider } from "./hooks/useVFX";
 import SfxUnlock from "./components/SfxUnlock";
