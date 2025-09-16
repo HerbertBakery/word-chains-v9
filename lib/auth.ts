@@ -48,43 +48,54 @@ export const authOptions: NextAuthOptions = {
   },
 
   /**
-   * Lightweight logging so we can see what went wrong during OAuth.
-   * These events avoid printing tokens or full profiles.
+   * Events: keep only supported hooks.
+   * (NextAuth 4.24.x does not include an "error" event in EventCallbacks.)
    */
   events: {
-    async signIn(message) {
+    async signIn({ user, account, isNewUser }) {
       console.log("[next-auth][event][signIn]", {
-        userId: message.user?.id,
-        provider: (message.account as any)?.provider,
-        isNewUser: (message.isNewUser ?? false),
+        userId: (user as any)?.id,
+        provider: account?.provider,
+        isNewUser: !!isNewUser,
       });
     },
-    async signOut(message) {
+    async signOut({ session }) {
       console.log("[next-auth][event][signOut]", {
-        sessionToken: (message as any)?.sessionToken ? "present" : "none",
+        userId: session?.user ? (session.user as any).id : null,
       });
     },
-    async createUser(message) {
-      console.log("[next-auth][event][createUser]", { userId: message.user?.id });
+    async createUser({ user }) {
+      console.log("[next-auth][event][createUser]", { userId: (user as any)?.id });
     },
-    async linkAccount(message) {
+    async linkAccount({ user, account }) {
       console.log("[next-auth][event][linkAccount]", {
-        userId: message.user?.id,
-        provider: (message.account as any)?.provider,
+        userId: (user as any)?.id,
+        provider: account?.provider,
       });
     },
-    async session(message) {
+    async session({ session }) {
       console.log("[next-auth][event][session]", {
-        userId: message.session?.user ? (message.session.user as any).id : null,
+        userId: session?.user ? (session.user as any).id : null,
       });
     },
-    async error(message) {
-      // This is the key line that will show you callback/redirect/CSRF/config errors
-      console.error("[next-auth][event][error]", {
-        name: message?.name,
-        message: message?.message,
-        cause: (message as any)?.cause?.message,
-      });
+  },
+
+  /**
+   * Use NextAuth's logger for errors / warnings / debug.
+   * This replaces the unsupported events.error handler.
+   */
+  logger: {
+    error(code, ...metadata) {
+      console.error("[next-auth][logger][error]", code, ...metadata);
+    },
+    warn(code, ...metadata) {
+      console.warn("[next-auth][logger][warn]", code, ...metadata);
+    },
+    debug(code, ...metadata) {
+      // You can silence this in production if it's noisy.
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[next-auth][logger][debug]", code, ...metadata);
+      }
     },
   },
 };
