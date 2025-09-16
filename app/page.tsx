@@ -1,4 +1,3 @@
-// app/page.tsx
 import Image from "next/image";
 import Link from "next/link";
 import AuthGate from "./components/AuthGate";
@@ -30,7 +29,8 @@ export default function Page() {
 
           {/* Buttons row + Sign in */}
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/word-chains" className="btn btn-primary">Play now</Link>
+            {/* ✅ Route to the modern Play page */}
+            <Link href="/play" className="btn btn-primary">Play now</Link>
             <Link href="/leaderboard" className="btn btn-ghost">Leaderboard</Link>
             <Link href="/stats" className="btn btn-ghost">Stats</Link>
             <Link href="/rules" className="btn btn-ghost">Rules</Link>

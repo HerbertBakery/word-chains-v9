@@ -4,39 +4,45 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // For Neon/pgBouncer so migrations run on a direct (non-pooler) connection
+  directUrl = env("DATABASE_DIRECT_URL")
 }
 
-/* ========= NextAuth core models ========= */
+/**
+ * ========= NextAuth core models =========
+ */
 
 model User {
-  id             String    @id @default(cuid())
-  name           String?
-  email          String?   @unique
-  emailVerified  DateTime?
-  image          String?
-  username       String?   @unique
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  username      String?   @unique
 
-  accounts       Account[]
-  sessions       Session[]
-  playerStats    PlayerStats?
+  accounts    Account[]
+  sessions    Session[]
+  playerStats PlayerStats?
+  dailyStreak DailyStreak?  // opposite side of DailyStreak.user relation
+  dailyRuns   DailyRun[]    // optional runs linked to this user
 }
 
 model Account {
-  id                String  @id @default(cuid())
+  id                String @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
 
-  refresh_token     String? @map("refresh_token")
-  access_token      String? @map("access_token")
-  expires_at        Int?    @map("expires_at")
-  token_type        String? @map("token_type")
-  scope             String?
-  id_token          String? @map("id_token")
-  session_state     String? @map("session_state")
+  refresh_token      String? @map("refresh_token")
+  access_token       String? @map("access_token")
+  expires_at         Int?    @map("expires_at")
+  token_type         String? @map("token_type")
+  scope              String?
+  id_token           String? @map("id_token")
+  session_state      String? @map("session_state")
   oauth_token_secret String?
   oauth_token        String?
 
@@ -62,31 +68,100 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-/* ========= Your game stats ========= */
+/**
+ * ========= Game stats =========
+ */
 
 model PlayerStats {
-  userId               String  @id
-  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  totalWords           Int     @default(0)
-  uniqueWords          Int     @default(0)
-  animals              Int     @default(0)
-  countries            Int     @default(0)
-  names                Int     @default(0)
-  sameLetterWords      Int     @default(0)
-  switches             Int     @default(0)
-  linksEarned          Int     @default(0)
-  linksSpent           Int     @default(0)
+  totalWords      Int @default(0)
+  uniqueWords     Int @default(0)
+  animals         Int @default(0)
+  countries       Int @default(0)
+  names           Int @default(0)
+  sameLetterWords Int @default(0)
+  switches        Int @default(0)
+  linksEarned     Int @default(0)
+  linksSpent      Int @default(0)
 
-  bestScore            Int     @default(0)
-  longestChain         Int     @default(0)
-  highestMultiplier    Int     @default(0)
-  longestAnimalStreak  Int     @default(0)
-  longestCountryStreak Int     @default(0)
-  longestNameStreak    Int     @default(0)
+  bestScore            Int @default(0)
+  longestChain         Int @default(0)
+  highestMultiplier    Int @default(0)
+  longestAnimalStreak  Int @default(0)
+  longestCountryStreak Int @default(0)
+  longestNameStreak    Int @default(0)
 
-  badges               Int     @default(0)
+  badges Int @default(0)
 
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- Streaks (NEW) ---
+  dailyStreak     Int       @default(0)
+  puzzleStreak    Int       @default(0)
+  lastPlayedAt    DateTime?
+  lastCompletedAt DateTime?
+
+  // Rolling log relation (NEW)
+  streakEvents    StreakEvent[]
+}
+
+/**
+ * ========= Daily mode =========
+ * - One submission per (userId, specId) or (deviceId, specId)
+ * - Supports guests via deviceId
+ */
+model DailyRun {
+  id           String   @id @default(cuid())
+  userId       String?          // NextAuth user id (optional if playing as guest)
+  deviceId     String?          // anonymous-device id (cookie) for guests
+  specId       String           // e.g., "2025-09-15" or hash
+  dateKey      String           // canonical daily key (e.g., "2025-09-15")
+  score        Int
+  wordsPlayed  String[] @default([])
+  catsJson     Json     @default("{}") // { name: n, animal: n, ... }
+  sameEnds     Int      @default(0)
+  maxChain     Int      @default(0)
+  completedAll Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  // Optional relation to User (SetNull on delete keeps guest/device runs intact)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Constraints: one entry per (user, spec) or (device, spec)
+  @@unique([userId, specId], name: "uniq_user_spec")
+  @@unique([deviceId, specId], name: "uniq_device_spec")
+
+  // Fast lookups for leaderboards
+  @@index([specId, score(sort: Desc)], name: "idx_spec_score")
+  @@index([dateKey, score(sort: Desc)], name: "idx_date_score")
+  @@index([dateKey, createdAt], name: "idx_date_created")
+}
+
+model DailyStreak {
+  userId    String   @id
+  current   Int      @default(0)
+  best      Int      @default(0)
+  updatedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StreakEvent {
+  id       String      @id @default(cuid())
+  userId   String
+  kind     StreakKind
+  occurred DateTime    @default(now())
+
+  player   PlayerStats @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, occurred])
+  @@map("StreakEvent")
+}
+
+enum StreakKind {
+  PLAYED_ANY_MODE       // counts toward Daily Streak
+  COMPLETED_DAILY_PUZZLE // counts toward Puzzle Streak
 }

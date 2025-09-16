@@ -1,6 +1,65 @@
+// app/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
+
+/* ===================== Shared types for Daily tab ===================== */
+type DailyRow = {
+  id: string;
+  score: number;
+  dateKey?: string;
+  createdAt: string;
+  user?: { id: string; name: string | null; username: string | null; image: string | null };
+};
+
+type DailyPayload = {
+  ok: true;
+  dateKey: string;
+  todayKey: string;
+  todaySpecId: string;
+  highestScoreToday: number;
+  highestScoreAllTime: number;
+  yourRankToday: number | null;
+  streak: { current: number; best: number } | null;
+  topForDay: DailyRow[];
+  topAllTime: DailyRow[];
+};
+
+/* ===================== Page with tabs ===================== */
+export default function LeaderboardTabsPage() {
+  const [tab, setTab] = useState<"main" | "daily">("main");
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Leaderboard</h1>
+
+        <div className="inline-flex rounded-xl border bg-white p-1">
+          <button
+            className={`px-3 py-1.5 text-sm rounded-lg ${tab === "main" ? "bg-black text-white" : "text-neutral-700"}`}
+            onClick={() => setTab("main")}
+          >
+            Global
+          </button>
+          <button
+            className={`px-3 py-1.5 text-sm rounded-lg ${tab === "daily" ? "bg-black text-white" : "text-neutral-700"}`}
+            onClick={() => setTab("daily")}
+          >
+            Daily
+          </button>
+        </div>
+      </div>
+
+      {tab === "main" ? <MainLeaderboard /> : <DailyLeaderboard />}
+    </div>
+  );
+}
+
+/* ===================================================================== */
+/* ========================= YOUR EXISTING UI =========================== */
+/* (Unchanged, just wrapped in its own component)                        */
+/* ===================================================================== */
 
 const METRICS = [
   { value: "points", label: "Highest Score" },
@@ -21,7 +80,7 @@ type Leader = {
   value: number;
 };
 
-export default function LeaderboardPage() {
+function MainLeaderboard() {
   const [metric, setMetric] = useState<string>("points");
   const [rows, setRows] = useState<Leader[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -65,7 +124,7 @@ export default function LeaderboardPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Global Leaderboard</h1>
+            <h2 className="text-xl font-bold">Global Leaderboard</h2>
             <p className="text-sm text-neutral-500">Click a player to view their profile & full stats.</p>
           </div>
           <label className="sm:w-80">
@@ -216,6 +275,107 @@ function Stat({ label, value }: { label: string; value: any }) {
     <div className="rounded-xl border bg-neutral-50 px-3 py-2">
       <div className="text-xs text-neutral-500">{label}</div>
       <div className="font-semibold">{value}</div>
+    </div>
+  );
+}
+
+/* ===================================================================== */
+/* ============================= DAILY TAB ============================== */
+/* ===================================================================== */
+
+function DailyLeaderboard() {
+  const [data, setData] = useState<DailyPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState<string>(""); // blank = today
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const url = date ? `/api/daily/leaderboard?date=${date}` : "/api/daily/leaderboard";
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((j) => {
+        if (!cancelled) setData(j?.ok ? j : null);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e?.message || "Failed to load daily leaderboard.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [date]);
+
+  if (loading) return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-neutral-500">Loading daily leaderboard…</div>;
+  if (error)   return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">{error}</div>;
+  if (!data)   return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">Could not load daily data.</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border bg-white/70 p-4">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-end justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Daily · {data.dateKey}</h2>
+            <div className="text-sm text-neutral-600">
+              Highest Today: <b>{data.highestScoreToday}</b> · Highest (All Daily): <b>{data.highestScoreAllTime}</b>
+            </div>
+            {data.streak && (
+              <div className="mt-1 text-sm text-neutral-600">
+                Your Streak: <b>{data.streak.current}</b> · Best: <b>{data.streak.best}</b>
+                {data.yourRankToday && (
+                  <span className="ml-3">Your Rank Today: <b>#{data.yourRankToday}</b></span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-neutral-600">View date:</label>
+            <input
+              type="date"
+              className="input rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+              value={date}
+              max={data.todayKey}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <DailyBoard title="Top Today" rows={data.topForDay} />
+        <DailyBoard title="All-Time Daily" rows={data.topAllTime} showDate />
+      </div>
+    </div>
+  );
+}
+
+function DailyBoard({ title, rows, showDate = false }: { title: string; rows: DailyRow[]; showDate?: boolean }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-white/70 shadow-sm">
+      <div className="border-b bg-neutral-50 px-4 py-2 font-semibold">{title}</div>
+      <ol className="divide-y">
+        {rows.map((r, i) => (
+          <li key={r.id} className="flex items-center justify-between p-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-6 text-right tabular-nums">{i + 1}.</span>
+              <div className="truncate">
+                {r.user
+                  ? (r.user.username ? `@${r.user.username}` : (r.user.name ?? "Anon"))
+                  : "Guest"}
+              </div>
+              {showDate && r.dateKey && (
+                <span className="text-xs text-neutral-500">· {r.dateKey}</span>
+              )}
+            </div>
+            <span className="font-semibold tabular-nums">{r.score}</span>
+          </li>
+        ))}
+        {rows.length === 0 && (
+          <li className="p-4 text-sm text-neutral-500">No entries yet.</li>
+        )}
+      </ol>
     </div>
   );
 }
