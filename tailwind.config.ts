@@ -1,6 +1,8 @@
+// tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class", // <<< REQUIRED so .dark on <html> enables dark variants
   content: [
     "./app/**/*.{ts,tsx,js,jsx}",
     "./components/**/*.{ts,tsx,js,jsx}",

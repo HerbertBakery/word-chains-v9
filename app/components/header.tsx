@@ -1,4 +1,3 @@
-// app/components/Header.tsx
 "use client";
 
 import Link from "next/link";
@@ -7,6 +6,48 @@ import { usePathname } from "next/navigation";
 import AuthGate from "./AuthGate";
 import { useEffect, useState } from "react";
 
+/* ==================== Dark Mode Toggle ==================== */
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    // Initialize from system or saved preference
+    const root = document.documentElement;
+    const stored = localStorage.getItem("theme");
+    if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      root.classList.add("dark");
+      setDark(true);
+    } else {
+      root.classList.remove("dark");
+      setDark(false);
+    }
+  }, []);
+
+  const toggle = () => {
+    const root = document.documentElement;
+    if (dark) {
+      root.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+      setDark(false);
+    } else {
+      root.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+      setDark(true);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      className="btn btn-ghost btn-sm"
+      title="Toggle Dark Mode"
+    >
+      {dark ? "🌙" : "☀️"}
+    </button>
+  );
+}
+
+/* ==================== Streaks ==================== */
 type Streaks = {
   dailyStreak: number;
   puzzleStreak: number;
@@ -98,6 +139,11 @@ export default function Header() {
           {/* Streak badges */}
           <StreakBadge label="Daily" emoji="🔥" value={streaks?.dailyStreak} />
           <StreakBadge label="Puzzle" emoji="🧩" value={streaks?.puzzleStreak} />
+
+          {/* Theme toggle */}
+          <ThemeToggle />
+
+          {/* Auth controls */}
           <AuthGate compact />
         </div>
       </div>
