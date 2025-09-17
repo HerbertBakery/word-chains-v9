@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import ChainLeaderboard from "@/app/play/chain/ChainLeaderboard";
 
 /* ===================== Shared types for Daily tab ===================== */
 type DailyRow = {
@@ -27,7 +28,7 @@ type DailyPayload = {
 
 /* ===================== Page with tabs ===================== */
 export default function LeaderboardTabsPage() {
-  const [tab, setTab] = useState<"main" | "daily">("main");
+  const [tab, setTab] = useState<"main" | "daily" | "chain">("main");
 
   return (
     <div className="space-y-6">
@@ -48,17 +49,22 @@ export default function LeaderboardTabsPage() {
           >
             Daily
           </button>
+          <button
+            className={`px-3 py-1.5 text-sm rounded-lg ${tab === "chain" ? "bg-black text-white" : "text-neutral-700"}`}
+            onClick={() => setTab("chain")}
+          >
+            Chain
+          </button>
         </div>
       </div>
 
-      {tab === "main" ? <MainLeaderboard /> : <DailyLeaderboard />}
+      {tab === "main" ? <MainLeaderboard /> : tab === "daily" ? <DailyLeaderboard /> : <ChainLeaderboard />}
     </div>
   );
 }
 
 /* ===================================================================== */
-/* ========================= YOUR EXISTING UI =========================== */
-/* (Unchanged, just wrapped in its own component)                        */
+/* ========================= GLOBAL (Main) TAB ========================== */
 /* ===================================================================== */
 
 const METRICS = [
@@ -75,7 +81,7 @@ const METRICS = [
 type Leader = {
   userId: string;
   username?: string | null;
-  handle?: string | null; // <= used to route to /u/[handle]
+  handle?: string | null; // used to route to /u/[handle]
   image?: string | null;
   value: number;
 };
@@ -120,7 +126,6 @@ function MainLeaderboard() {
 
   return (
     <>
-      {/* Content only — global Header/PageShell come from app/layout.tsx */}
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -205,7 +210,6 @@ function MainLeaderboard() {
           </table>
         </div>
 
-        {/* Fallback modal for players with no username yet */}
         {selectedUser && <UserModal userId={selectedUser} onClose={() => setSelectedUser(null)} />}
       </div>
     </>
@@ -305,12 +309,15 @@ function DailyLeaderboard() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [date]);
 
-  if (loading) return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-neutral-500">Loading daily leaderboard…</div>;
-  if (error)   return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">{error}</div>;
-  if (!data)   return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">Could not load daily data.</div>;
+  if (loading)
+    return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-neutral-500">Loading daily leaderboard…</div>;
+  if (error) return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">{error}</div>;
+  if (!data) return <div className="rounded-2xl border bg-white/70 p-6 text-sm text-rose-600">Could not load daily data.</div>;
 
   return (
     <div className="space-y-4">
@@ -324,9 +331,7 @@ function DailyLeaderboard() {
             {data.streak && (
               <div className="mt-1 text-sm text-neutral-600">
                 Your Streak: <b>{data.streak.current}</b> · Best: <b>{data.streak.best}</b>
-                {data.yourRankToday && (
-                  <span className="ml-3">Your Rank Today: <b>#{data.yourRankToday}</b></span>
-                )}
+                {data.yourRankToday && <span className="ml-3">Your Rank Today: <b>#{data.yourRankToday}</b></span>}
               </div>
             )}
           </div>
@@ -361,20 +366,14 @@ function DailyBoard({ title, rows, showDate = false }: { title: string; rows: Da
             <div className="flex items-center gap-3 min-w-0">
               <span className="w-6 text-right tabular-nums">{i + 1}.</span>
               <div className="truncate">
-                {r.user
-                  ? (r.user.username ? `@${r.user.username}` : (r.user.name ?? "Anon"))
-                  : "Guest"}
+                {r.user ? (r.user.username ? `@${r.user.username}` : r.user.name ?? "Anon") : "Guest"}
               </div>
-              {showDate && r.dateKey && (
-                <span className="text-xs text-neutral-500">· {r.dateKey}</span>
-              )}
+              {showDate && r.dateKey && <span className="text-xs text-neutral-500">· {r.dateKey}</span>}
             </div>
             <span className="font-semibold tabular-nums">{r.score}</span>
           </li>
         ))}
-        {rows.length === 0 && (
-          <li className="p-4 text-sm text-neutral-500">No entries yet.</li>
-        )}
+        {rows.length === 0 && <li className="p-4 text-sm text-neutral-500">No entries yet.</li>}
       </ol>
     </div>
   );

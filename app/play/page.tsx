@@ -12,6 +12,7 @@ export default function PlayChooser() {
         <h1 className="text-2xl font-bold mb-4">Choose a Mode</h1>
 
         <div className="grid gap-4 sm:grid-cols-2">
+          {/* Free Play */}
           <Link
             href="/word-chains"
             className="rounded-2xl border p-5 hover:shadow-md transition bg-white"
@@ -26,6 +27,7 @@ export default function PlayChooser() {
             </div>
           </Link>
 
+          {/* Daily Puzzle */}
           <Link
             href="/daily"
             className="rounded-2xl border p-5 hover:shadow-md transition bg-white"
@@ -39,6 +41,22 @@ export default function PlayChooser() {
               <span className="px-2 py-0.5 rounded bg-emerald-100">Goals</span>
               <span className="px-2 py-0.5 rounded bg-amber-100">Hidden Words</span>
               <span className="px-2 py-0.5 rounded bg-blue-100">Streaks</span>
+            </div>
+          </Link>
+
+          {/* Chain Mode */}
+          <Link
+            href="/play/chain"
+            className="rounded-2xl border p-5 hover:shadow-md transition bg-white"
+          >
+            <div className="text-lg font-semibold">Chain Mode</div>
+            <p className="text-sm text-gray-600 mt-1">
+              A fast-paced challenge: clear random categories within 15 seconds each. No lives, no penalties—just see how far you can chain!
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 text-sm">
+              <span className="px-2 py-0.5 rounded bg-purple-100">15s Timer</span>
+              <span className="px-2 py-0.5 rounded bg-pink-100">Categories</span>
+              <span className="px-2 py-0.5 rounded bg-indigo-100">Endurance</span>
             </div>
           </Link>
         </div>
