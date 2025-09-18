@@ -2,33 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-body { 
-  @apply bg-white text-gray-900 antialiased dark:bg-slate-900 dark:text-gray-100; 
+/* ========= Base page colors (single source of truth) ========= */
+body {
+  @apply bg-white text-gray-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
 }
 
-.card { 
-  @apply rounded-2xl bg-white shadow-soft p-6 dark:bg-slate-800 dark:border-slate-700; 
+/* ========= Cards & Buttons ========= */
+.card {
+  /* Added border + dark neutrals for consistent contrast */
+  @apply rounded-2xl bg-white border border-gray-200 p-6 shadow-soft
+         dark:bg-neutral-900 dark:border-neutral-800;
 }
 
-.btn { 
-  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium shadow-soft transition; 
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium shadow-soft transition;
 }
 
-.btn-primary { 
-  @apply bg-brand-600 text-white hover:bg-brand-700; 
+.btn-primary {
+  @apply bg-brand-600 text-white hover:bg-brand-700;
 }
 
-.btn-ghost { 
-  @apply bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-gray-100; 
+.btn-ghost {
+  /* Neutral palette in dark to match body */
+  @apply bg-gray-100 hover:bg-gray-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:text-gray-100;
 }
 
-/* --- Google Sign-In button fix --- */
+/* --- Google Sign-In button fix (keeps white in both themes) --- */
 .btn-google {
   @apply border border-gray-300 bg-white text-gray-900;
 }
 .dark .btn-google {
-  @apply border border-gray-600 bg-white text-gray-900; /* keep white in dark mode */
+  @apply border-gray-600;
 }
+
+/* ========= Badges / Pills (used on the Play chooser) ========= */
+.badge {
+  @apply px-2 py-0.5 rounded text-xs font-medium
+         bg-gray-100 text-gray-800
+         dark:bg-white/10 dark:text-gray-100;
+}
+
+.badge-emerald { @apply bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200; }
+.badge-amber   { @apply bg-amber-100   text-amber-800   dark:bg-amber-400/15   dark:text-amber-200; }
+.badge-blue    { @apply bg-blue-100    text-blue-800    dark:bg-blue-400/15    dark:text-blue-200; }
+.badge-purple  { @apply bg-purple-100  text-purple-800  dark:bg-purple-400/15  dark:text-purple-200; }
+.badge-pink    { @apply bg-pink-100    text-pink-800    dark:bg-pink-400/15    dark:text-pink-200; }
+.badge-indigo  { @apply bg-indigo-100  text-indigo-800  dark:bg-indigo-400/15  dark:text-indigo-200; }
+
+/* ========= Shadows & Radii extensions (from your Tailwind config) ========= */
+.shadow-soft {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+}
+
+/* ========= VFX / SFX Micro-animations (unchanged) ========= */
 
 /* --- Power dock subtle glow for ready powerups --- */
 @keyframes wc-glow-pulse {
@@ -46,7 +72,6 @@ body {
       0 0 22px rgba(0,0,0,0.18);
   }
 }
-
 .wc-glow {
   animation: wc-glow-pulse 1.35s ease-in-out infinite;
 }

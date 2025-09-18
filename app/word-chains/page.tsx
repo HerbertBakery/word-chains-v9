@@ -61,6 +61,7 @@ const CHAIN_COLORS: Record<
   ChainKeyOrMain,
   { badge: string; border: string; text: string; label: string; solid: string }
 > = {
+  // base light styles; we add dark overrides at usage sites
   main:   { badge: "bg-gray-100",   border: "border-gray-400",   text: "text-gray-800",   label: "Main",      solid: "bg-gray-200" },
   name:   { badge: "bg-blue-100",   border: "border-blue-400",   text: "text-blue-800",   label: "Names",     solid: "bg-blue-100" },
   animal: { badge: "bg-green-100",  border: "border-green-400",  text: "text-green-800",  label: "Animals",   solid: "bg-green-100" },
@@ -78,8 +79,8 @@ type LBRow = { id?: string; name: string; score: number; createdAt?: string; ava
 
 function MetricCard({ title, value }: { title: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center">
-      <div className="text-xs tracking-wide text-gray-500">{title}</div>
+    <div className="rounded-xl border border-gray-200 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900/80 px-4 py-3 text-center">
+      <div className="text-xs tracking-wide text-gray-500 dark:text-neutral-400">{title}</div>
       <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
     </div>
   );
@@ -87,8 +88,6 @@ function MetricCard({ title, value }: { title: string; value: React.ReactNode })
 
 /** Lightweight dropdown leaderboard. 
  * Default endpoint uses your existing API: /api/wordchains/leaderboard.
- * If your leaderboard page lives elsewhere (e.g. app/public/leaderboard),
- * change the `endpoint` prop where used.
  */
 function LeaderboardDropdown({
   mode = "classic",
@@ -142,13 +141,13 @@ function LeaderboardDropdown({
         style={{ maxHeight: open ? 800 : 0, opacity: open ? 1 : 0 }}
         aria-hidden={!open}
       >
-        <div className="mt-3 rounded-xl border border-gray-200 bg-white">
+        <div className="mt-3 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900/90">
           <div className="flex items-center justify-between gap-3 p-3">
             <div className="text-sm font-semibold">Chain Leaderboard</div>
-            <label className="text-xs text-gray-600 flex items-center gap-2">
+            <label className="text-xs text-gray-600 dark:text-neutral-400 flex items-center gap-2">
               Sort by
               <select
-                className="rounded border px-2 py-1 text-xs"
+                className="rounded border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-xs"
                 value={sort}
                 onChange={(e) => setSort(e.target.value as any)}
               >
@@ -159,14 +158,14 @@ function LeaderboardDropdown({
             </label>
           </div>
 
-          {loading && <div className="p-3 text-sm text-gray-600">Loading…</div>}
+          {loading && <div className="p-3 text-sm text-gray-600 dark:text-neutral-400">Loading…</div>}
           {err && <div className="p-3 text-sm text-rose-600">{err}</div>}
 
           {!!rows?.length && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-t border-b bg-gray-50">
+                  <tr className="border-t border-b border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800">
                     <th className="px-3 py-2 text-left">#</th>
                     <th className="px-3 py-2 text-left">Player</th>
                     <th className="px-3 py-2 text-right">Score</th>
@@ -175,20 +174,20 @@ function LeaderboardDropdown({
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <tr key={(r.id ?? "") + i} className="border-t">
+                    <tr key={(r.id ?? "") + i} className="border-t border-gray-200 dark:border-neutral-800">
                       <td className="px-3 py-2">{i + 1}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           {r.avatar ? (
                             <img src={r.avatar} className="h-6 w-6 rounded-full object-cover" alt="" />
                           ) : (
-                            <span className="inline-block h-6 w-6 rounded-full bg-gray-200" />
+                            <span className="inline-block h-6 w-6 rounded-full bg-gray-200 dark:bg-neutral-700" />
                           )}
                           <span className="truncate max-w-[180px]">{r.name || "Player"}</span>
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.score.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
+                      <td className="px-3 py-2 text-right text-gray-500 dark:text-neutral-400 tabular-nums">
                         {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
                       </td>
                     </tr>
@@ -199,7 +198,7 @@ function LeaderboardDropdown({
           )}
 
           {rows && rows.length === 0 && !loading && !err && (
-            <div className="p-3 text-sm text-gray-600">No scores yet — be the first!</div>
+            <div className="p-3 text-sm text-gray-600 dark:text-neutral-400">No scores yet — be the first!</div>
           )}
         </div>
       </div>
@@ -240,11 +239,10 @@ async function postRunToLeaderboard(summary: {
     return { ok: false, status: 0, msg: "Network error saving score." };
   }
 }
+
 /** ===================== Component ===================== */
 export default function WordChains() {
   /* ===== SFX/VFX instances + element refs (non-invasive) ===== */
-  // SFX hook (prod-safe): some builds expose only { play, isUnlocked }.
-  // We polyfill a no-op stop() if it's missing so calls like stop("warning") don't break.
   const sound = useSound();
   const play = sound.play;
   const stop: (...args: any[]) => void =
@@ -257,7 +255,6 @@ export default function WordChains() {
   const warningPlayingRef = useRef(false);            // track heartbeat state
 
   // Latches that mirror started/paused without stale closures.
-  // (We sync these AFTER the state variables are declared.)
   const startedRef = useRef(false);
   const pausedRef  = useRef(false);
 
@@ -1500,7 +1497,7 @@ export default function WordChains() {
           info="Same-Letter"
           available={powerCharges.same}
           onUse={() => usePower("same")}
-          fillClass="bg-gray-300"
+          fillClass="bg-gray-300 dark:bg-neutral-600"
           pct={(p.cur / p.need) * 100}
           counter={`${p.cur}/${p.need}`}
           ready={powerCharges.same > 0}
@@ -1531,15 +1528,15 @@ export default function WordChains() {
       <div className="grid gap-4 md:gap-6 md:grid-cols-3">
         {/* Post-game leaderboard prompt */}
         {showNamePrompt && (
-          <div className="md:col-span-3 card flex flex-col gap-3 border border-dashed border-gray-300">
+          <div className="md:col-span-3 card flex flex-col gap-3 border border-dashed border-gray-300 dark:border-neutral-700">
             <h3 className="text-xl font-semibold">Submit your score</h3>
-            <div className="text-sm text-gray-600">Final Score: <b>{finalScore}</b></div>
+            <div className="text-sm text-gray-600 dark:text-neutral-400">Final Score: <b>{finalScore}</b></div>
             <div className="flex flex-col sm:flex-row gap-2">
               <input className="input flex-1" placeholder="Enter your name" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
               <button className="btn btn-primary" onClick={submitScore}>Submit to Leaderboard</button>
               <button className="btn" onClick={() => setShowNamePrompt(false)}>Dismiss</button>
             </div>
-            <div className="text-xs text-gray-500">You can start a new run any time.</div>
+            <div className="text-xs text-gray-500 dark:text-neutral-400">You can start a new run any time.</div>
           </div>
         )}
         {!started ? (
@@ -1547,7 +1544,7 @@ export default function WordChains() {
             /* ===== RUN OVER screen ===== */
             <div className="md:col-span-3 card flex flex-col items-center gap-4">
               <h2 className="text-2xl font-bold">Run Over</h2>
-              <p className="text-sm text-gray-600">Your score has been submitted.</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400">Your score has been submitted.</p>
 
               <div className="grid grid-cols-2 gap-3 w-full max-w-md">
                 <MetricCard title="WORDS PLAYED" value={wordsPlayedThisRun} />
@@ -1559,10 +1556,7 @@ export default function WordChains() {
 
                 {/* Dropdown leaderboard; uses API endpoint by default */}
                 <div className="min-w-[260px]">
-                  <Link href="/leaderboard" className="btn">
-  View Leaderboard
-</Link>
-
+                  <Link href="/leaderboard" className="btn">View Leaderboard</Link>
                 </div>
 
                 <Link href="/play" className="btn">Back to Modes</Link>
@@ -1573,24 +1567,24 @@ export default function WordChains() {
             /* ===== ORIGINAL START screen (unchanged) ===== */
             <div className="md:col-span-3 card flex flex-col items-center gap-3">
               <h1 className="text-3xl font-bold">Word Chains</h1>
-              <p className="text-gray-600 text-center max-w-2xl">
+              <p className="text-gray-600 dark:text-neutral-400 text-center max-w-2xl">
                 Next word must start with the previous last letter and include the previous first letter somewhere.
                 Words that sit in multiple categories build <b>all</b> those category multipliers.
                 Spend LINKS to keep multipliers when switching categories.
               </p>
-              <label className="text-sm text-gray-600 flex items-center gap-2 mt-2">
+              <label className="text-sm text-gray-600 dark:text-neutral-400 flex items-center gap-2 mt-2">
                 <input type="checkbox" checked={strictDictionary} onChange={(e) => setStrictDictionary(e.target.checked)} />
                 Strict dictionary validation
                 {/* Loading progress (shows until dictionary set) */}
                 {!dict && (
                   <div className="w-full max-w-md mt-2">
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-2 bg-gray-200 dark:bg-neutral-700 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-gray-800 transition-all"
+                        className="h-full bg-gray-800 dark:bg-neutral-300 transition-all"
                         style={{ width: `${loadPct}%` }}
                       />
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-500 dark:text-neutral-400 mt-1">
                       {loadMsg} — {loadPct}%
                     </div>
                   </div>
@@ -1609,13 +1603,13 @@ export default function WordChains() {
               <div className="text-lg">Score: <b>{score}</b></div>
               <div>Lives: {"❤️".repeat(Math.max(0, lives))}{lives <= 0 && " (none)"} (max 5 )</div>
               <div className="flex items-center gap-2">
-                <div>Time Left: {timeLeft}s {paused && <span className="text-xs text-gray-500">(frozen)</span>}</div>
+                <div>Time Left: {timeLeft}s {paused && <span className="text-xs text-gray-500 dark:text-neutral-400">(frozen)</span>}</div>
               </div>
               <div>LINKS: {Number(links).toFixed(1)}</div>
 
               <div className="text-sm">
                 Total Multiplier: <b>{fmt(totalMult)}</b>
-                <span className="ml-2 text-xs text-gray-600">
+                <span className="ml-2 text-xs text-gray-600 dark:text-neutral-400">
                   (base {totalMultData.catSum.toFixed(2)} + missions +{totalMultData.missionAdd} × same-letter ×{sameMult.toFixed(2)})
                 </span>
               </div>
@@ -1634,13 +1628,13 @@ export default function WordChains() {
 
             {/* Input & recent */}
             <div className="card md:col-span-1 order-1 md:order-2">
-              <div className="text-sm text-gray-500">Last word: <b className="break-words">{last === "start" ? "—" : last}</b></div>
+              <div className="text-sm text-gray-500 dark:text-neutral-400">Last word: <b className="break-words">{last === "start" ? "—" : last}</b></div>
               <form className="mt-3 flex gap-2" onSubmit={onSubmit}>
                 <input
                   ref={inputDomRef}
                   name="word"
                   placeholder="Enter a word"
-                  className="flex-1 rounded-xl border p-3 break-words"
+                  className="flex-1 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-3 break-words"
                   autoFocus
                   onKeyDown={onTypeKey}
                 />
@@ -1653,12 +1647,15 @@ export default function WordChains() {
                   {recent.map((w, i) => {
                     const cats = Array.from(getCategories(w));
                     return (
-                      <div key={w + String(i)} className="rounded-lg border border-gray-200 bg-white p-2 text-sm break-words">
+                      <div key={w + String(i)} className="rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2 text-sm break-words">
                         <div className="font-medium">{w}</div>
                         {cats.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {cats.map((c) => (
-                              <span key={c} className={`px-1.5 py-0.5 rounded text-[10px] ${CHAIN_COLORS[c].badge} ${CHAIN_COLORS[c].text}`}>
+                              <span
+                                key={c}
+                                className={`px-1.5 py-0.5 rounded text-[10px] ${CHAIN_COLORS[c].badge} ${CHAIN_COLORS[c].text} dark:opacity-90`}
+                              >
                                 {CHAIN_COLORS[c].label}
                               </span>
                             ))}
@@ -1676,7 +1673,7 @@ export default function WordChains() {
               <div className="card">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold">Missions</h3>
-                  <div className="text-sm text-gray-500">One active per unlocked track</div>
+                  <div className="text-sm text-gray-500 dark:text-neutral-400">One active per unlocked track</div>
                 </div>
 
                 <div className="space-y-3">
@@ -1689,11 +1686,11 @@ export default function WordChains() {
 
                     if (done) {
                       return (
-                        <div key={String(owner)} className={`rounded-xl border ${c.border} ${c.solid} p-2 opacity-90`}>
+                        <div key={String(owner)} className={`rounded-xl border ${c.border} ${c.solid} p-2 opacity-90 dark:bg-opacity-60 dark:border-opacity-60`}>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${c.badge} ${c.text}`}>{c.label}</span>
-                              <span className="text-xs text-gray-700">Category progress: <b>100%</b></span>
+                              <span className="text-xs text-gray-700 dark:text-neutral-300">Category progress: <b>100%</b></span>
                             </div>
                             <span className={`text-xs px-2 py-0.5 rounded ${c.badge} ${c.text} border ${c.border}`}>Completed · +10 base</span>
                           </div>
@@ -1715,11 +1712,11 @@ export default function WordChains() {
                     const displayTarget  = isReachMult ? Number(target).toFixed(2) : String(target);
 
                     return (
-                      <div key={id} className={`rounded-xl border ${c.border} p-2`}>
+                      <div key={id} className={`rounded-xl border ${c.border} p-2 dark:border-opacity-60`}>
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${c.badge} ${c.text}`}>{c.label}</span>
-                            <span className="text-xs text-gray-600">Category progress: <b>{pct}%</b></span>
+                            <span className="text-xs text-gray-600 dark:text-neutral-400">Category progress: <b>{pct}%</b></span>
                           </div>
                         </div>
 
@@ -1741,15 +1738,15 @@ export default function WordChains() {
                                 {(m as any).kind === "sequence" && (<>Sequence: <b>{(m as any).sequence.map((x: ChainKey) => CHAIN_COLORS[x].label).join(" → ")}</b></>)}
                               </>
                             )}
-                            <span className="ml-2 text-xs text-gray-600">
+                            <span className="ml-2 text-xs text-gray-600 dark:text-neutral-400">
                               — Reward: <b>{Number((m as any).reward ?? 0).toFixed(1)}</b> LINK
                             </span>
                           </span>
 
-                          <div className="min-w-[120px] text-right text-xs text-gray-600">
+                          <div className="min-w-[120px] text-right text-xs text-gray-600 dark:text-neutral-400">
                             {displayCurrent}/{displayTarget}
-                            <div className="mt-1 h-1.5 w-32 rounded bg-gray-200 overflow-hidden">
-                              <div className="h-1.5 bg-black/60" style={{ width: `${bar}%` }} />
+                            <div className="mt-1 h-1.5 w-32 rounded bg-gray-200 dark:bg-neutral-700 overflow-hidden">
+                              <div className="h-1.5 bg-black/60 dark:bg-neutral-300" style={{ width: `${bar}%` }} />
                             </div>
                           </div>
                         </div>
@@ -1758,7 +1755,7 @@ export default function WordChains() {
                   })}
 
                   {lockedCategories.length > 0 && (
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-gray-600 dark:text-neutral-400">
                       <b>{lockedCategories.length}</b> categor{lockedCategories.length === 1 ? "y is" : "ies are"} locked — finish the Level 1 mission of the latest unlocked category to reveal the next.
                     </div>
                   )}
@@ -1780,7 +1777,7 @@ export default function WordChains() {
             aria-label="Powerups"
           >
             <div className="mx-auto w-full max-w-[1000px] px-3 pb-2">
-              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl overflow-hidden">
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md shadow-xl overflow-hidden">
                 {/* Handle / Header */}
                 <button
                   className="w-full px-4 py-2 flex items-center justify-between"
@@ -1790,7 +1787,7 @@ export default function WordChains() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold">Powerups</span>
-                    <span className="text-xs text-gray-500">Unique words charge these</span>
+                    <span className="text-xs text-gray-500 dark:text-neutral-400">Unique words charge these</span>
                   </div>
                   <span className="text-xl leading-none select-none">{mobileDrawerOpen ? "▾" : "▴"}</span>
                 </button>
@@ -1819,10 +1816,10 @@ export default function WordChains() {
           {/* Desktop/Tablet: original sticky presentation (unchanged) */}
           <div className="hidden md:block sticky bottom-2 z-40 mt-4">
             <div className="mx-auto w-[min(100%,1000px)] px-3">
-              <div className="rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-xl">
+              <div className="rounded-2xl border border-gray-200 dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md shadow-xl">
                 <div className="px-3 py-2 flex items-center justify-between">
                   <div className="text-sm font-semibold">Powerups</div>
-                  <div className="text-xs text-gray-500">Fills with each <b>unique</b> word</div>
+                  <div className="text-xs text-gray-500 dark:text-neutral-400">Fills with each <b>unique</b> word</div>
                 </div>
                 <div className="px-3 pb-3">
                   <PowerupsGrid />
@@ -1832,7 +1829,6 @@ export default function WordChains() {
           </div>
         </>
       )}
-
       {/* Local styles for ice & active glow */}
       <style jsx global>{`
     /* ===== active glow on category switch ===== */
@@ -2055,8 +2051,9 @@ function ChainRow({
     <div
       ref={containerRef}
       className={[
-        "relative rounded-xl border p-2 bg-white/80 overflow-hidden",
+        "relative rounded-xl border p-2 bg-white/80 dark:bg-neutral-900/80 overflow-hidden",
         color.border,
+        "dark:border-neutral-700",
         active ? "wc-active-glow ring-1 ring-sky-300" : "",
         state.frozen ? "shadow-inner" : "",
       ].join(" ")}
@@ -2067,13 +2064,13 @@ function ChainRow({
 
       <div className="relative z-10 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color.badge} ${color.text}`}>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${color.badge} ${color.text} dark:opacity-90`}>
             {color.label}
           </span>
-          {state.frozen && <span className="text-[11px] text-sky-800/90">frozen</span>}
+          {state.frozen && <span className="text-[11px] text-sky-800/90 dark:text-sky-200/90">frozen</span>}
         </div>
         <div className="text-sm">
-          <b>{fmt(state.multiplier)}</b> <span className="text-gray-600">len {state.length}</span>
+          <b>{fmt(state.multiplier)}</b> <span className="text-gray-600 dark:text-neutral-400">len {state.length}</span>
         </div>
       </div>
     </div>
@@ -2136,10 +2133,11 @@ function PowerRow({
       onClick={handleClick}
       onKeyDown={(e) => { if (canUse && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onUse(); } }}
       className={[
-        "relative overflow-hidden rounded-xl border bg-white",
+        "relative overflow-hidden rounded-xl border bg-white dark:bg-neutral-900",
         "transition-all select-none",
+        "border-gray-200 dark:border-neutral-700",
         canUse ? "cursor-pointer hover:shadow-md active:scale-[0.99]" : "cursor-not-allowed opacity-75",
-        ready && canUse ? `ring-2 ring-offset-1 ring-offset-white ${ringClass || ""} wc-glow` : ""
+        ready && canUse ? `ring-2 ring-offset-1 ring-offset-white dark:ring-offset-neutral-900 ${ringClass || ""} wc-glow` : ""
       ].join(" ")}
     >
       {/* FILL LAYER */}
@@ -2150,7 +2148,7 @@ function PowerRow({
       />
       {/* Leading sheen */}
       <div
-        className="absolute inset-y-0 left-0 w-4 bg-white/10 pointer-events-none"
+        className="absolute inset-y-0 left-0 w-4 bg-white/10 dark:bg-white/5 pointer-events-none"
         style={{ transform: `translateX(${pctClamped}%)` }}
         aria-hidden
       />
@@ -2170,7 +2168,7 @@ function PowerRow({
         </div>
 
         {(info || counter) && (
-          <div className="mt-1 flex items-center justify-between text-[11px] text-gray-800">
+          <div className="mt-1 flex items-center justify-between text-[11px] text-gray-800 dark:text-neutral-300">
             <span className="whitespace-normal break-words">{info}</span>
             {counter && <span className="ml-2 shrink-0 tabular-nums">{counter}</span>}
           </div>

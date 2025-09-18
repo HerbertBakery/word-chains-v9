@@ -1,7 +1,6 @@
-// app/layout.tsx
 import "./globals.css";
 import PageShell from "./components/PageShell";
-import Header from "./components/header";             // Use capital H
+import Header from "./components/header"; // Use capital H
 import Providers from "./providers";
 import { VfxProvider } from "./hooks/useVFX";
 import SfxUnlock from "./components/SfxUnlock";
@@ -15,13 +14,35 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-white text-gray-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
+      <head>
+        {/* Prevent flash of wrong theme on first paint and during route changes */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){
+  try {
+    var stored = localStorage.getItem('theme'); // 'light' | 'dark' | 'system' | null
+    var isDark = stored === 'dark' || (
+      (stored === null || stored === 'system') &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) || stored === null; // default to dark
+    var root = document.documentElement;
+    if (isDark) root.classList.add('dark'); else root.classList.remove('dark');
+    // Hint to browser for correct built-in controls
+    var m = document.createElement('meta');
+    m.name = 'color-scheme';
+    m.content = 'light dark';
+    document.head.appendChild(m);
+  } catch (_) {}
+})();`,
+          }}
+        />
+      </head>
+      <body className="min-h-screen antialiased">
         <Providers>
           <SfxUnlock />
           <ThemeProvider>
             <VfxProvider>
               <PageShell>
-                {/* Removed extra ThemeToggle here */}
                 <Header />
                 {children}
               </PageShell>

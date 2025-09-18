@@ -1,61 +1,97 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark";
+type Stored = Theme | "system";
 
 type ThemeContextType = {
-  theme: Theme;
+  /** Effective theme after applying system if needed */
+  resolvedTheme: Theme;
+  /** Raw preference: "system" means follow OS */
+  preference: Stored;
+  /** Toggle between light <-> dark (persists) */
+  toggle: () => void;
+  /** Explicitly set light or dark (persists) */
   setTheme: (t: Theme) => void;
+  /** Clear preference and follow OS again */
+  resetToSystem: () => void;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "system",
+  resolvedTheme: "dark",
+  preference: "dark",
+  toggle: () => {},
   setTheme: () => {},
+  resetToSystem: () => {},
 });
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("system");
+const STORAGE_KEY = "theme";
 
-  // Load saved theme
+function getSystemPrefersDark(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // ✅ Initialize preference synchronously from localStorage
+  const [preference, setPreference] = useState<Stored>(() => {
+    if (typeof window === "undefined") return "dark"; // SSR fallback
+    const saved = window.localStorage.getItem(STORAGE_KEY) as Stored | null;
+    return saved ?? "dark"; // Default to dark instead of system
+  });
+
+  const [systemDark, setSystemDark] = useState<boolean>(() =>
+    getSystemPrefersDark()
+  );
+
+  // Watch system changes only when following system
   useEffect(() => {
-    const saved = localStorage.getItem("theme") as Theme | null;
-    if (saved) setTheme(saved);
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setSystemDark(mq.matches);
+    onChange();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
   }, []);
 
-  // Apply theme whenever it changes
+  const resolvedTheme: Theme = useMemo(() => {
+    if (preference === "system") return systemDark ? "dark" : "light";
+    return preference;
+  }, [preference, systemDark]);
+
+  // Apply to <html> class
   useEffect(() => {
-    const root = window.document.documentElement;
+    const root = document.documentElement;
+    if (resolvedTheme === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
+  }, [resolvedTheme]);
 
-    const applyTheme = (t: Theme) => {
-      if (t === "light") {
-        root.classList.remove("dark");
-      } else if (t === "dark") {
-        root.classList.add("dark");
-      } else {
-        // system
-        const mq = window.matchMedia("(prefers-color-scheme: dark)");
-        if (mq.matches) {
-          root.classList.add("dark");
-        } else {
-          root.classList.remove("dark");
-        }
-      }
-    };
-
-    applyTheme(theme);
-    localStorage.setItem("theme", theme);
-
-    if (theme === "system") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = () => applyTheme("system");
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
+  // Persist preference
+  useEffect(() => {
+    if (preference === "system") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, preference);
     }
-  }, [theme]);
+  }, [preference]);
+
+  const setTheme = (t: Theme) => setPreference(t);
+  const resetToSystem = () => setPreference("system");
+  const toggle = () =>
+    setPreference((prev) => {
+      const current =
+        prev === "system" ? (systemDark ? "dark" : "light") : prev;
+      return current === "dark" ? "light" : "dark";
+    });
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider
+      value={{ resolvedTheme, preference, toggle, setTheme, resetToSystem }}
+    >
       {children}
     </ThemeContext.Provider>
   );

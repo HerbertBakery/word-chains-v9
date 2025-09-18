@@ -1,3 +1,4 @@
+// app/stats/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -180,9 +181,13 @@ const fmtMsPerWord = (ms: number | null | undefined) => {
   return `${s.toFixed(1)} s/word`;
 };
 
+/* ---------- Reusable UI bits (dark-safe) ---------- */
 function Card({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-neutral-200/70 bg-white/70 shadow-sm p-5 ${className}`}>
+    <div
+      className={`rounded-2xl border border-neutral-200/70 bg-white/70 shadow-sm p-5
+                  dark:border-neutral-800 dark:bg-neutral-900/60 ${className}`}
+    >
       {title ? <h2 className="text-lg font-semibold mb-3">{title}</h2> : null}
       {children}
     </div>
@@ -191,23 +196,26 @@ function Card({ title, children, className = "" }: { title?: string; children: R
 function KPI({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
     <div>
-      <div className="text-sm text-neutral-500">{label}</div>
+      <div className="text-sm text-neutral-500 dark:text-neutral-400">{label}</div>
       <div className="text-2xl font-bold leading-tight">{value}</div>
-      {hint ? <div className="text-xs text-neutral-400 mt-0.5">{hint}</div> : null}
+      {hint ? <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">{hint}</div> : null}
     </div>
   );
 }
 function Progress({ pct }: { pct: number }) {
   return (
-    <div className="w-full h-2 rounded-full bg-neutral-200 overflow-hidden" aria-label="progress">
-      <div className="h-2 rounded-full bg-black/80" style={{ width: `${pct < 0 ? 0 : pct > 100 ? 100 : pct}%` }} />
+    <div className="w-full h-2 rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden" aria-label="progress">
+      <div
+        className="h-2 rounded-full bg-black/80 dark:bg-white/80"
+        style={{ width: `${pct < 0 ? 0 : pct > 100 ? 100 : pct}%` }}
+      />
     </div>
   );
 }
 function Row({ label, right }: { label: string; right: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <div className="text-sm text-neutral-700">{label}</div>
+      <div className="text-sm text-neutral-700 dark:text-neutral-300">{label}</div>
       <div className="text-sm font-medium">{right}</div>
     </div>
   );
@@ -225,9 +233,10 @@ function MetricSelector({ value, onChange }: { value: string; onChange: (v: stri
   ];
   return (
     <label className="block">
-      <span className="text-xs uppercase tracking-wide text-neutral-500">Leaderboard Metric</span>
+      <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">Leaderboard Metric</span>
       <select
-        className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm"
+        className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm
+                   dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -239,6 +248,7 @@ function MetricSelector({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
+/* ---------------- Main Page ---------------- */
 export default function StatsPage() {
   const router = useRouter();
   const [statsLocal, setStatsLocal] = useState<Stats | null>(null);
@@ -457,7 +467,7 @@ export default function StatsPage() {
   };
   const computedBadges: ComputedBadge[] = useMemo(() => {
     if (!stats) return [];
-    // 🔢 feed rounded multiplier into badges so tiers check whole numbers
+    // feed rounded multiplier into badges so tiers check whole numbers
     const mergedForBadges: Stats = {
       ...stats,
       highestMultiplier: bestHighestMultiplierRounded || stats.highestMultiplier,
@@ -496,10 +506,9 @@ export default function StatsPage() {
   if (!stats) {
     return (
       <>
-        {/* Content only — global Header/PageShell come from app/layout.tsx */}
         <div className="space-y-6">
           <Card>
-            <div className="text-sm text-neutral-700">
+            <div className="text-sm text-neutral-700 dark:text-neutral-300">
               No stats yet. Play a game (and sign in) so your runs are saved to your account.
             </div>
           </Card>
@@ -510,15 +519,14 @@ export default function StatsPage() {
 
   return (
     <>
-      {/* Content only — global Header/PageShell come from app/layout.tsx */}
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Your Word Chains Pokedex</h1>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               Totals, records, completion, and grindable badges.
-              <span className="ml-2 text-xs italic text-neutral-400">
+              <span className="ml-2 text-xs italic text-neutral-400 dark:text-neutral-500">
                 {statsServer ? "Data source: server (all-time)" : "Data source: local (last session backup)"}
               </span>
             </p>
@@ -527,7 +535,8 @@ export default function StatsPage() {
             <MetricSelector value={metric} onChange={setMetric} />
             <button
               onClick={handleGoLeaderboard}
-              className="mt-2 w-full rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              className="mt-2 w-full rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:opacity-90
+                         dark:bg-white dark:text-black"
             >
               View Leaderboard for this Metric
             </button>
@@ -554,13 +563,13 @@ export default function StatsPage() {
 
         {/* Category Completion */}
         <Card title="Category Completion">
-          {loadingTotals && <div className="mb-2 text-sm text-neutral-500">Loading category totals…</div>}
+          {loadingTotals && <div className="mb-2 text-sm text-neutral-500 dark:text-neutral-400">Loading category totals…</div>}
           <div className="space-y-4">
             {completion.map((c) => (
               <div key={c.key}>
                 <div className="mb-1 flex items-center justify-between">
                   <div className="text-sm font-medium">{c.label}</div>
-                  <div className="text-xs text-neutral-500">
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
                     {c.total != null && c.total > 0 ? (
                       <>
                         {c.found} / {c.total} ({c.pct != null ? formatPct(c.pct) : "—"})
@@ -574,7 +583,7 @@ export default function StatsPage() {
               </div>
             ))}
           </div>
-          <div className="mt-4 text-sm text-neutral-600">
+          <div className="mt-4 text-sm text-neutral-600 dark:text-neutral-300">
             Overall completion across shown categories:{" "}
             {(() => {
               const v = completion.filter((r) => (r.total ?? 0) > 0);
@@ -595,14 +604,18 @@ export default function StatsPage() {
           {stats.powerups && Object.keys(stats.powerups).length > 0 ? (
             <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {Object.entries(stats.powerups).map(([k, v]) => (
-                <li key={k} className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2">
+                <li
+                  key={k}
+                  className="flex items-center justify-between rounded-xl border border-neutral-200 px-3 py-2
+                             dark:border-neutral-800 dark:bg-white/5"
+                >
                   <span className="text-sm">{k}</span>
                   <span className="text-sm font-semibold">{String(v)}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-neutral-500">No power-ups recorded yet.</div>
+            <div className="text-sm text-neutral-500 dark:text-neutral-400">No power-ups recorded yet.</div>
           )}
         </Card>
 
@@ -630,14 +643,23 @@ function ShareExport({ stats }: { stats: Stats }) {
   };
   return (
     <Card title="Share / Export">
-      <p className="mb-3 text-sm text-neutral-600">Copy your stats JSON (backup or send to support):</p>
+      <p className="mb-3 text-sm text-neutral-600 dark:text-neutral-300">
+        Copy your stats JSON (backup or send to support):
+      </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <button onClick={handleCopy} className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-medium hover:bg-neutral-200">
+        <button
+          onClick={handleCopy}
+          className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-medium hover:bg-neutral-200
+                     dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:text-neutral-100"
+        >
           {copied ? "Copied!" : "Copy JSON"}
         </button>
         <details className="w-full">
-          <summary className="cursor-pointer text-sm text-neutral-500">Preview JSON</summary>
-          <pre className="mt-2 max-h-64 overflow-auto rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
+          <summary className="cursor-pointer text-sm text-neutral-500 dark:text-neutral-400">Preview JSON</summary>
+          <pre
+            className="mt-2 max-h-64 overflow-auto rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700
+                       dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+          >
             {json}
           </pre>
         </details>
@@ -660,11 +682,11 @@ function BadgeGrid({
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {badges.map((b) => (
-        <div key={b.id} className="rounded-xl border border-neutral-200 p-4">
+        <div key={b.id} className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800 dark:bg-white/5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-base font-semibold">{b.name}</div>
-              <div className="text-xs text-neutral-500">{b.description}</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">{b.description}</div>
             </div>
             <div className="text-2xl" title={b.achievedTierIndex >= 0 ? b.tiers[b.achievedTierIndex].label : "Locked"}>
               {b.achievedTierIndex >= 0 ? b.tiers[b.achievedTierIndex].icon : "🔒"}
@@ -676,16 +698,24 @@ function BadgeGrid({
               const locked = !t.achieved;
               const showTarget = t.target && t.target > 0;
               return (
-                <div key={t.label} className={`rounded-lg border border-neutral-200 p-3 ${locked ? "bg-neutral-50" : "bg-white"}`}>
+                <div
+                  key={t.label}
+                  className={`rounded-lg border border-neutral-200 p-3 ${locked ? "bg-neutral-50" : "bg-white"}
+                              dark:border-neutral-800 dark:bg-white/5`}
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{t.icon}</span>
-                      <span className={`text-sm font-medium ${locked ? "text-neutral-500" : ""}`}>{t.label}</span>
+                      <span className={`text-sm font-medium ${locked ? "text-neutral-500 dark:text-neutral-400" : ""}`}>{t.label}</span>
                     </div>
-                    <div className="text-xs text-neutral-500">{showTarget ? `${Math.min(100, Math.floor(pctNow))}%` : "—"}</div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {showTarget ? `${Math.min(100, Math.floor(pctNow))}%` : "—"}
+                    </div>
                   </div>
-                  <div className="mt-2">{showTarget ? <Progress pct={pctNow} /> : <div className="text-xs text-neutral-400">No total available</div>}</div>
-                  <div className="mt-1 text-xs text-neutral-500">
+                  <div className="mt-2">
+                    {showTarget ? <Progress pct={pctNow} /> : <div className="text-xs text-neutral-400 dark:text-neutral-500">No total available</div>}
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                     {showTarget ? `${t.current} / ${t.target}` : `${t.current} / —`}
                     {t.hint ? ` · ${t.hint}` : ""}
                   </div>

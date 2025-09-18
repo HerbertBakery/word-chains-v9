@@ -395,28 +395,30 @@ export default function ChainMode() {
 
     applyAcceptedWord(w);
   };
-
   /* ===================== UI ===================== */
   return (
     <VfxProvider>
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-3xl px-4 py-8 text-slate-900 dark:text-slate-200">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Chain Mode</h1>
-          <Link href="/play" className="text-sm underline opacity-80 hover:opacity-100">
+          <Link
+            href="/play"
+            className="text-sm underline opacity-80 hover:opacity-100 text-slate-700 dark:text-slate-300"
+          >
             ← All Modes
           </Link>
         </div>
 
         {/* Intro / Start */}
         {!started && !isOver && (
-          <div className="rounded-2xl border p-6">
-            <p className="mb-3 text-gray-600">
+          <div className="rounded-2xl border p-6 bg-white/80 border-gray-200 dark:bg-slate-900/80 dark:border-slate-700">
+            <p className="mb-3 text-gray-600 dark:text-slate-300">
               You have <b>15s</b> per word. Follow the same link + dictionary rules as Classic.
               You can’t reuse words. Start with <b>1 skip</b>; earn another after <b>3 correct
               answers in a row</b> (max 2).
             </p>
 
-            <label className="mb-4 inline-flex items-center gap-2 text-sm text-gray-700">
+            <label className="mb-4 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={strictDictionary}
@@ -427,10 +429,13 @@ export default function ChainMode() {
 
             {!dict && (
               <div className="w-full max-w-md">
-                <div className="h-2 overflow-hidden rounded-full bg-gray-200">
-                  <div className="h-full bg-gray-800 transition-all" style={{ width: `${loadPct}%` }} />
+                <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
+                  <div
+                    className="h-full bg-gray-800 dark:bg-slate-200 transition-all"
+                    style={{ width: `${loadPct}%` }}
+                  />
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                   {loadMsg} — {loadPct}%
                 </div>
               </div>
@@ -455,7 +460,7 @@ export default function ChainMode() {
                 <span className="text-sm uppercase tracking-wide opacity-70">Time Left</span>
                 <span className="text-lg font-semibold tabular-nums">{timeLeft}s</span>
               </div>
-              <div className="h-2 w-full rounded-full bg-slate-200">
+              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
                 <div
                   className="h-2 rounded-full bg-emerald-500 transition-all"
                   style={{ width: `${Math.max(0, Math.min(100, (timeLeft / 15) * 100))}%` }}
@@ -464,7 +469,7 @@ export default function ChainMode() {
             </div>
 
             {/* Current objective */}
-            <div className="rounded-2xl border p-5">
+            <div className="rounded-2xl border p-5 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
               <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Current Category</div>
               <div className="text-2xl font-bold capitalize">{category}</div>
               <div className="mt-2 text-sm opacity-70">
@@ -478,7 +483,7 @@ export default function ChainMode() {
                 ref={inputRef}
                 name="word"
                 placeholder="Type your next word…"
-                className="grow rounded-2xl border px-4 py-3 outline-none ring-0 focus:border-black"
+                className="grow rounded-2xl border px-4 py-3 outline-none ring-0 focus:border-black bg-white border-gray-300 text-slate-900 placeholder-slate-400 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-400 dark:focus:border-white"
                 autoFocus
                 onKeyDown={onKeyDownSFX}
               />
@@ -490,7 +495,9 @@ export default function ChainMode() {
                 onClick={doSkip}
                 disabled={skips <= 0}
                 className={`rounded-2xl px-5 py-3 shadow hover:opacity-90 ${
-                  skips > 0 ? "bg-indigo-600 text-white" : "cursor-not-allowed bg-gray-200 text-gray-500"
+                  skips > 0
+                    ? "bg-indigo-600 text-white"
+                    : "cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-slate-700 dark:text-slate-400"
                 }`}
                 title={skips > 0 ? "Skip this category and get a new starter" : "No skips available"}
               >
@@ -500,15 +507,15 @@ export default function ChainMode() {
 
             {/* HUD */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border p-4">
+              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
                 <div className="text-2xl font-bold tabular-nums">{score}</div>
               </div>
-              <div className="rounded-2xl border p-4">
+              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Words Played</div>
                 <div className="text-2xl font-bold tabular-nums">{Math.max(0, used.size)}</div>
               </div>
-              <div className="rounded-2xl border p-4">
+              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Same-Letter Bonus</div>
                 <div className="text-2xl font-bold">{fmt(sameMult)}</div>
               </div>
@@ -518,16 +525,16 @@ export default function ChainMode() {
 
         {/* Run over: stats + inline leaderboard toggle */}
         {isOver && (
-          <div className="rounded-2xl border p-6 text-center">
+          <div className="rounded-2xl border p-6 text-center bg-white/80 border-gray-200 dark:bg-slate-900/80 dark:border-slate-700">
             <h2 className="mb-1 text-xl font-bold">Run Over</h2>
             <p className="opacity-80">Your score has been submitted.</p>
 
             <div className="mx-auto mt-4 grid max-w-md grid-cols-2 gap-4 text-left">
-              <div className="rounded-2xl border p-4">
+              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Words Played</div>
                 <div className="text-2xl font-bold tabular-nums">{used.size}</div>
               </div>
-              <div className="rounded-2xl border p-4">
+              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
                 <div className="text-2xl font-bold tabular-nums">{score}</div>
               </div>
@@ -542,11 +549,14 @@ export default function ChainMode() {
               </button>
               <button
                 onClick={() => setShowBoard(true)}
-                className="rounded-2xl border px-5 py-3 hover:bg-slate-50"
+                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
               >
                 View Leaderboard
               </button>
-              <Link href="/play" className="rounded-2xl border px-5 py-3 hover:bg-slate-50">
+              <Link
+                href="/play"
+                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
                 Back to Modes
               </Link>
             </div>

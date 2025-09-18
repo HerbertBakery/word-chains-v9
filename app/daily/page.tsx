@@ -73,13 +73,13 @@ const CHAIN_COLORS: Record<
   ChainKey | "main",
   { badge: string; border: string; text: string; label: string; solid: string }
 > = {
-  main:   { badge: "bg-gray-100",   border: "border-gray-400",   text: "text-gray-800",   label: "Main",      solid: "bg-gray-200" },
-  name:   { badge: "bg-blue-100",   border: "border-blue-400",   text: "text-blue-800",   label: "Names",     solid: "bg-blue-100" },
-  animal: { badge: "bg-green-100",  border: "border-green-400",  text: "text-green-800",  label: "Animals",   solid: "bg-green-100" },
-  country:{ badge: "bg-purple-100", border: "border-purple-400", text: "text-purple-800", label: "Countries", solid: "bg-purple-100" },
-  food:   { badge: "bg-amber-100",  border: "border-amber-400",  text: "text-amber-900",  label: "Foods",     solid: "bg-amber-100" },
-  brand:  { badge: "bg-rose-100",   border: "border-rose-400",   text: "text-rose-800",   label: "Brands",    solid: "bg-rose-100" },
-  screen: { badge: "bg-teal-100",   border: "border-teal-400",   text: "text-teal-900",   label: "TV/Movies", solid: "bg-teal-100" },
+  main:   { badge: "bg-gray-100 dark:bg-gray-700",   border: "border-gray-400 dark:border-gray-600",   text: "text-gray-800 dark:text-gray-200",   label: "Main",      solid: "bg-gray-200 dark:bg-gray-600" },
+  name:   { badge: "bg-blue-100 dark:bg-blue-800",   border: "border-blue-400 dark:border-blue-600",   text: "text-blue-800 dark:text-blue-200",   label: "Names",     solid: "bg-blue-100 dark:bg-blue-900" },
+  animal: { badge: "bg-green-100 dark:bg-green-800", border: "border-green-400 dark:border-green-600", text: "text-green-800 dark:text-green-200", label: "Animals",   solid: "bg-green-100 dark:bg-green-900" },
+  country:{ badge: "bg-purple-100 dark:bg-purple-800", border: "border-purple-400 dark:border-purple-600", text: "text-purple-800 dark:text-purple-200", label: "Countries", solid: "bg-purple-100 dark:bg-purple-900" },
+  food:   { badge: "bg-amber-100 dark:bg-amber-800", border: "border-amber-400 dark:border-amber-600", text: "text-amber-900 dark:text-amber-100", label: "Foods",     solid: "bg-amber-100 dark:bg-amber-900" },
+  brand:  { badge: "bg-rose-100 dark:bg-rose-800",   border: "border-rose-400 dark:border-rose-600",   text: "text-rose-800 dark:text-rose-200",   label: "Brands",    solid: "bg-rose-100 dark:bg-rose-900" },
+  screen: { badge: "bg-teal-100 dark:bg-teal-800",   border: "border-teal-400 dark:border-teal-600",   text: "text-teal-900 dark:text-teal-100",   label: "TV/Movies", solid: "bg-teal-100 dark:bg-teal-900" },
 };
 
 /* ===== New: Defensive label helper so category tiles never render blank ===== */
@@ -127,7 +127,6 @@ function mulberry32(a: number) {
 }
 const pickFrom = <T,>(arr: T[], rnd: () => number) =>
   arr[Math.floor(rnd() * arr.length)];
-
 /* ===== Page component ===== */
 export default function DailyPage() {
   const { data: session } = useSession();
@@ -909,7 +908,7 @@ export default function DailyPage() {
   if (error) {
     return (
       <div className="mx-auto max-w-3xl p-4">
-        <div className="card p-6 text-rose-700">
+        <div className="card p-6 text-rose-700 dark:text-rose-300">
           Failed to load: {error}
           <div className="mt-3">
             <button className="btn btn-primary btn-sm" onClick={fetchSpec}>Retry</button>
@@ -927,11 +926,11 @@ export default function DailyPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Daily Puzzle</h1>
           {/* Streak pill (signed-in users) */}
-          <div className="hidden sm:flex items-center gap-1 rounded-full border px-3 py-1 text-sm">
+          <div className="hidden sm:flex items-center gap-1 rounded-full border px-3 py-1 text-sm border-gray-200 dark:border-gray-700">
             <span>🔥</span>
             <span className="font-semibold">{streak.current || 0}</span>
             {typeof streak.best === "number" && (
-              <span className="text-gray-500 text-xs"> (best {streak.best})</span>
+              <span className="text-gray-500 dark:text-gray-400 text-xs"> (best {streak.best})</span>
             )}
           </div>
         </div>
@@ -948,13 +947,13 @@ export default function DailyPage() {
           {!started && !showStats && (
             <div className="start-card card p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
                   <div>Daily ID: <b>{spec.id}</b></div>
                   <div>Starter: <b>{spec.starter}</b></div>
                   <div>Time: <b>{spec.timeSeconds}s</b></div>
                 </div>
                 {/* Streak inline on mobile */}
-                <div className="sm:hidden flex items-center gap-1 rounded-full border px-2 py-1 text-xs">
+                <div className="sm:hidden flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-gray-200 dark:border-gray-700">
                   <span>🔥</span><span className="font-semibold">{streak.current || 0}</span>
                 </div>
               </div>
@@ -965,14 +964,14 @@ export default function DailyPage() {
               </div>
 
               {showRestrictionHint && (
-                <div className="text-xs text-gray-700 rounded-lg border bg-gray-50 px-3 py-2">
+                <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
                   Valid today: <b>{allowedCatsList}</b>
                 </div>
               )}
 
               {/* Helper words preview (category-colored, bracketed labels) */}
               {hiddenWordsFiltered.length > 0 && (
-                <div className="text-xs text-gray-700 rounded-lg border bg-amber-50 px-3 py-2">
+                <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-amber-50 dark:bg-amber-950/20 px-3 py-2">
                   <div className="mb-1 font-semibold">Helper Words (click during game)</div>
                   <div className="flex flex-wrap gap-1">
                     {hiddenWordsFiltered.map((w) => {
@@ -986,28 +985,28 @@ export default function DailyPage() {
                           className={[
                             "px-2 py-0.5 rounded-full border text-xs",
                             color.badge, color.text,
-                            usedUp ? "opacity-50 line-through" : "bg-white"
+                            usedUp ? "opacity-50 line-through" : "bg-white dark:bg-gray-900"
                           ].join(" ")}
                           title={c ? CHAIN_COLORS[c].label : "General"}
                         >
-                          {w} <span className="text-[10px] text-gray-600">({safeLabelForCat(c)})</span>
+                          {w} <span className="text-[10px] text-gray-600 dark:text-gray-400">({safeLabelForCat(c)})</span>
                         </span>
                       );
                     })}
                   </div>
-                  <div className="mt-1 text-amber-900">
+                  <div className="mt-1 text-amber-900 dark:text-amber-200">
                     Use anytime for +{HIDDEN_WORD_BONUS.toLocaleString()} and it counts toward that category.
                   </div>
                 </div>
               )}
 
-              <div className="text-xs text-gray-600">
+              <div className="text-xs text-gray-600 dark:text-gray-400">
                 Rules: Next word must start with the previous last letter and include the previous first letter somewhere.
                 (Helper buttons ignore this rule.)
               </div>
 
               {!isSignedIn && (
-                <div className="rounded-xl border bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <div className="rounded-xl border bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
                   Sign in to track your daily streak.
                   <button className="ml-2 underline" onClick={() => signIn("google")}>Sign in with Google</button>
                 </div>
@@ -1019,10 +1018,10 @@ export default function DailyPage() {
                 </button>
                 <button className="btn" onClick={fetchSpec}>Refresh Daily</button>
                 {alreadyPlayed && (
-                  <span className="text-xs text-gray-600">Come back tomorrow 👋</span>
+                  <span className="text-xs text-gray-600 dark:text-gray-400">Come back tomorrow 👋</span>
                 )}
               </div>
-              <div className="min-h-5 text-rose-600">{msg}</div>
+              <div className="min-h-5 text-rose-600 dark:text-rose-400">{msg}</div>
             </div>
           )}
 
@@ -1037,26 +1036,26 @@ export default function DailyPage() {
                 </div>
 
                 {/* Timer bar */}
-                <div className="w-full h-2 rounded bg-gray-200 overflow-hidden" aria-label="time remaining">
+                <div className="w-full h-2 rounded bg-gray-200 dark:bg-gray-800 overflow-hidden" aria-label="time remaining">
                   <div
                     className="h-2 bg-black/70 transition-all"
                     style={{ width: `${Math.max(0, Math.min(100, (timeLeft / (spec.timeSeconds || 120)) * 100))}%` }}
                   />
                 </div>
-                <div className="text-sm text-gray-600">Time Left: {timeLeft}s</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">Time Left: {timeLeft}s</div>
 
                 {/* Goals row */}
                 <GoalGrid goals={spec.goals} state={goalState} />
 
                 {/* Restriction hint */}
                 {showRestrictionHint && (
-                  <div className="text-xs text-gray-700 rounded-lg border bg-gray-50 px-3 py-2">
+                  <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
                     Valid today: <b>{allowedCatsList}</b>
                   </div>
                 )}
 
                 {/* Last word above input */}
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   Last word: <b className="break-words">{last === "start" ? spec.starter : last}</b>
                 </div>
 
@@ -1077,7 +1076,7 @@ export default function DailyPage() {
                   <button className="btn btn-primary">Submit</button>
                 </form>
 
-                <div className="min-h-6 text-rose-600">{msg}</div>
+                <div className="min-h-6 text-rose-600 dark:text-rose-400">{msg}</div>
 
                 {/* Recent */}
                 <div>
@@ -1086,7 +1085,7 @@ export default function DailyPage() {
                     {recent.map((w, i) => {
                       const cats = Array.from(getCategories(w));
                       return (
-                        <div key={w + i} className="rounded border p-2 text-sm bg-white">
+                        <div key={w + i} className="rounded border border-gray-200 dark:border-gray-700 p-2 text-sm bg-white dark:bg-gray-900">
                           <div className="font-medium break-words">{w}</div>
                           {cats.length > 0 && (
                             <div className="mt-1 flex flex-wrap gap-1">
@@ -1127,35 +1126,35 @@ export default function DailyPage() {
                           <button
                             key={w}
                             className={[
-                              "justify-between text-left rounded border px-3 py-2 hover:bg-amber-50",
+                              "justify-between text-left rounded border px-3 py-2 hover:bg-amber-50 dark:hover:bg-amber-900/30",
                               color.border
                             ].join(" ")}
                             onClick={() => tryUseHiddenWord(w)}
                             title="Auto-play now (ignores chain-letter rule)"
                           >
                             <span className={`font-medium ${color.text}`}>
-                              {w} <span className="text-xs text-gray-600">({safeLabelForCat(c)})</span>
+                              {w} <span className="text-xs text-gray-600 dark:text-gray-400">({safeLabelForCat(c)})</span>
                             </span>
-                            <span className="ml-2 text-xs text-amber-700">Use →</span>
+                            <span className="ml-2 text-xs text-amber-700 dark:text-amber-300">Use →</span>
                           </button>
                         );
                       })}
                     </div>
                     {usedHidden.size > 0 && (
-                      <div className="mt-2 text-xs text-gray-600">
+                      <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
                         Used: {[...usedHidden].join(", ")}
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="text-sm text-gray-700">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
                   <div>Daily ID: <b>{spec.id}</b></div>
                   <div>Starter: <b>{spec.starter}</b></div>
                   <div>Same-Ends: <b>{sameEnds}</b></div>
                   <div>Max Chain: <b>{maxChain}</b></div>
                 </div>
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-gray-600 dark:text-gray-400">
                   Powerups/Lives/Links are disabled in Daily for simplicity.
                 </div>
               </div>
@@ -1168,22 +1167,22 @@ export default function DailyPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold">Daily Stats</h2>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="rounded-full border px-2 py-0.5">🔥 {streak.current || 0}</span>
-                  {typeof streak.best === "number" && <span className="text-gray-500">(best {streak.best})</span>}
+                  <span className="rounded-full border px-2 py-0.5 border-gray-200 dark:border-gray-700">🔥 {streak.current || 0}</span>
+                  {typeof streak.best === "number" && <span className="text-gray-500 dark:text-gray-400">(best {streak.best})</span>}
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border p-3">
-                  <div className="text-xs text-gray-500">Score</div>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Score</div>
                   <div className="text-2xl font-semibold">{score.toLocaleString()}</div>
                 </div>
-                <div className="rounded-lg border p-3">
-                  <div className="text-xs text-gray-500">Max Chain</div>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Max Chain</div>
                   <div className="text-2xl font-semibold">{maxChain}</div>
                 </div>
-                <div className="rounded-lg border p-3">
-                  <div className="text-xs text-gray-500">Same-Ends</div>
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Same-Ends</div>
                   <div className="text-2xl font-semibold">{sameEnds}</div>
                 </div>
               </div>
@@ -1193,7 +1192,7 @@ export default function DailyPage() {
                 <GoalGrid goals={spec.goals} state={goalState} />
               </div>
 
-              <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-700">
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3 text-xs text-gray-700 dark:text-gray-300">
                 <div className="flex items-center justify-between">
                   <div>
                     <div>Daily ID: <b>{spec.id}</b></div>
@@ -1202,12 +1201,12 @@ export default function DailyPage() {
                   <button className="btn btn-ghost btn-sm" onClick={shareDaily}>Share Results</button>
                 </div>
                 <textarea
-                  className="mt-2 w-full rounded border p-2 bg-white"
+                  className="mt-2 w-full rounded border border-gray-200 dark:border-gray-700 p-2 bg-white dark:bg-gray-900"
                   rows={5}
                   readOnly
                   value={buildShareText()}
                 />
-                <div className="text-[11px] text-gray-500 mt-2">Catchphrase included: “Can you beat the daily puzzle?”</div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-2">Catchphrase included: “Can you beat the daily puzzle?”</div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1226,11 +1225,11 @@ export default function DailyPage() {
 
       {/* Local styles */}
       <style jsx global>{`
-        .card { @apply rounded-2xl border bg-white/80 shadow-sm backdrop-blur; }
-        .btn { @apply rounded-xl px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 transition; }
+        .card { @apply rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-white/5 shadow-sm backdrop-blur; }
+        .btn { @apply rounded-xl px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition; }
         .btn-primary { @apply border-black bg-black text-white hover:bg-black/90; }
-        .btn-ghost { @apply border-transparent bg-transparent hover:bg-gray-100; }
-        .input { @apply bg-white; }
+        .btn-ghost { @apply border-transparent bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800; }
+        .input { @apply bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700; }
       `}</style>
     </div>
   );
@@ -1255,18 +1254,20 @@ function GoalGrid({
             key={i}
             className={[
               "relative rounded-lg border p-2 text-sm overflow-hidden",
-              met ? "border-emerald-400 bg-emerald-50 opacity-90" : "border-gray-200 bg-white"
+              met
+                ? "border-emerald-400 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 opacity-90"
+                : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
             ].join(" ")}
           >
             {/* Fill layer showing progress */}
             <div
-              className={`absolute inset-y-0 left-0 transition-all duration-300 ${met ? "bg-emerald-200/60" : "bg-gray-200/60"}`}
+              className={`absolute inset-y-0 left-0 transition-all duration-300 ${met ? "bg-emerald-200/60 dark:bg-emerald-700/30" : "bg-gray-200/60 dark:bg-gray-700/30"}`}
               style={{ width: `${s.pct}%` }}
               aria-hidden
             />
             {/* Leading sheen */}
             <div
-              className="absolute inset-y-0 left-0 w-4 bg-white/20 pointer-events-none transition-transform duration-300"
+              className="absolute inset-y-0 left-0 w-4 bg-white/20 dark:bg-white/10 pointer-events-none transition-transform duration-300"
               style={{ transform: `translateX(${s.pct}%)` }}
               aria-hidden
             />
@@ -1275,7 +1276,7 @@ function GoalGrid({
               <span className="truncate">{s.label}</span>
               <span className="ml-2">{met ? "🟩" : "⬜"}</span>
             </div>
-            <div className="relative z-10 mt-1 text-[11px] text-gray-700 tabular-nums">
+            <div className="relative z-10 mt-1 text-[11px] text-gray-700 dark:text-gray-300 tabular-nums">
               {Math.min(s.current, s.target)} / {s.target}
             </div>
           </div>
