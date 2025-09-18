@@ -1,4 +1,4 @@
-// app/leaderboard/ChainLeaderboard.tsx
+// app/play/chain/ChainLeaderboard.tsx
 "use client";
 
 import React from "react";
@@ -106,7 +106,8 @@ export default function ChainLeaderboard() {
                         ) : null}
                       </div>
                       <div className="font-medium truncate">
-                        {r.user?.username ? `@${r.user.username}` : r.user?.name ?? r.playerName ?? "Guest"}
+                        {/* No @ prefix */}
+                        {r.user?.username ?? r.user?.name ?? r.playerName ?? "Player"}
                       </div>
                     </div>
                   </td>

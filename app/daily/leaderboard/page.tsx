@@ -74,7 +74,8 @@ export default function DailyLeaderboardPage() {
       <style jsx global>{`
         .card { @apply rounded-2xl border bg-white/80 shadow-sm backdrop-blur; }
         .btn { @apply rounded-xl px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 transition; }
-        .btn-ghost { @apply border-transparent bg-transparent hover:bg-gray-100; }
+        .btn-ghost { @apply border-transparent bg-transparent; }
+        .btn-ghost:hover { @apply bg-gray-100; }
       `}</style>
     </div>
   );

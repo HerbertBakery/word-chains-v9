@@ -47,7 +47,8 @@ export default function LeaderboardTabsPage() {
             className={`px-3 py-1.5 text-sm rounded-lg ${tab === "daily" ? "bg-black text-white" : "text-neutral-700"}`}
             onClick={() => setTab("daily")}
           >
-            Daily
+            {/* Label only changed from Daily -> Puzzle */}
+            Puzzle
           </button>
           <button
             className={`px-3 py-1.5 text-sm rounded-lg ${tab === "chain" ? "bg-black text-white" : "text-neutral-700"}`}
@@ -195,7 +196,8 @@ function MainLeaderboard() {
                           {r.image ? <img src={r.image} alt="" className="h-full w-full object-cover" /> : null}
                         </div>
                         <div className="font-medium">
-                          {r.username || r.handle ? `@${r.handle ?? r.username}` : r.userId}
+                          {/* Removed '@' prefix here */}
+                          {r.username ?? r.handle ?? r.userId}
                         </div>
                       </div>
                     </td>
@@ -366,7 +368,8 @@ function DailyBoard({ title, rows, showDate = false }: { title: string; rows: Da
             <div className="flex items-center gap-3 min-w-0">
               <span className="w-6 text-right tabular-nums">{i + 1}.</span>
               <div className="truncate">
-                {r.user ? (r.user.username ? `@${r.user.username}` : r.user.name ?? "Anon") : "Guest"}
+                {/* Removed '@' prefix here */}
+                {r.user ? (r.user.username ?? r.user.name ?? "Anon") : "Guest"}
               </div>
               {showDate && r.dateKey && <span className="text-xs text-neutral-500">· {r.dateKey}</span>}
             </div>

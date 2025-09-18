@@ -190,25 +190,25 @@ model DailyPiece {
  * Stores score + longest chain; supports guests via deviceId and optional playerName.
  */
 model ChainRun {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt  // 👈 add @default(now())
 
-  // optional identity
   userId     String?
   deviceId   String?
   playerName String?
-
-  // metrics
+  seasonKey  String   @default("global")
   score        Int
   longestChain Int
-
-  // relation to User (optional; keep guest runs if user is deleted)
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  // indexes for fast leaderboard queries
-  @@index([score(sort: Desc), createdAt], name: "idx_chain_score")
-  @@index([longestChain(sort: Desc), createdAt], name: "idx_chain_longest")
+  @@unique([userId, seasonKey], name: "uniq_chain_user_season")
+  @@unique([deviceId, seasonKey], name: "uniq_chain_device_season")
+
+  @@index([seasonKey, score(sort: Desc), createdAt], name: "idx_chain_season_score")
+  @@index([seasonKey, longestChain(sort: Desc), createdAt], name: "idx_chain_season_longest")
   @@index([createdAt], name: "idx_chain_created")
   @@index([userId], name: "idx_chain_user")
   @@index([deviceId], name: "idx_chain_device")
 }
+
