@@ -1,5 +1,8 @@
 // app/api/leaderboard/route.ts
-import { NextResponse } from "next/server";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type MetricKey =
@@ -23,11 +26,10 @@ const FIELD_MAP: Record<MetricKey, keyof import("@prisma/client").PlayerStats> =
   badges:             "badges",
 };
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const metricParam = (searchParams.get("metric") ?? "points") as MetricKey;
-    const field = FIELD_MAP[metricParam] ?? "bestScore";
+    const metricParam = (req.nextUrl.searchParams.get("metric") ?? "points") as MetricKey;
+    const field = (FIELD_MAP[metricParam] ?? "bestScore") as keyof import("@prisma/client").PlayerStats;
 
     const rows = await prisma.playerStats.findMany({
       orderBy: { [field]: "desc" },
