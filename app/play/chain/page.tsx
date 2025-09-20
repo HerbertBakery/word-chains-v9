@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { useSound } from "@/app/hooks/useSound";
 import { useVFX, VfxProvider } from "@/app/hooks/useVFX";
@@ -16,6 +17,7 @@ import {
   stripCorpSuffixes,
 } from "@/lib/game/shared";
 
+import { prngFromSeed } from "@/lib/seed";
 import ChainLeaderboard from "./ChainLeaderboard";
 
 /* ===================== Chain Mode constants ===================== */
@@ -67,19 +69,8 @@ const CAT_BORDER: Record<ChainKey, string> = {
 };
 const ALL: ChainKey[] = ["name", "animal", "country", "food", "brand", "screen"];
 
-/* ===================== Per-category power rules =====================
-
-  - Countries: threshold 5 -> "Nuke"          (reset used words so you can reuse any word)
-  - Names:     threshold 5 -> "ChatGPT"       (auto-plays a valid word for current category & link rules)
-  - Foods:     threshold 3 -> "Letter Roll"   (re-roll the *actual* last letter of the last word)
-  - TV/Movies: threshold 3 -> "Time Freeze"   (freeze the clock for 15s)
-  - Brands:    threshold 3 -> "Influencer"    (+3 to global base multiplier)
-  - Animals:   threshold 3 -> "Beast Mode"    (+1 to global base multiplier)
-*/
-type PowerRule = {
-  threshold?: number;           // undefined => no power for this category
-  label?: string;
-};
+/* ===================== Per-category power rules ===================== */
+type PowerRule = { threshold?: number; label?: string };
 const POWER_RULES: Record<ChainKey, PowerRule> = {
   country: { threshold: 5, label: "Nuke" },
   name:    { threshold: 5, label: "ChatGPT" },
@@ -92,6 +83,14 @@ const POWER_RULES: Record<ChainKey, PowerRule> = {
 export default function ChainMode() {
   const { play } = useSound();
   const vfx = useVFX();
+
+  const sp = useSearchParams();
+  const seed = sp.get("seed") || "";
+  const matchId = sp.get("match"); // present in Ranked/Ladder
+
+  // Seeded RNG for Ranked/Ladder; falls back to Math.random() for normal Chain
+  const seededRand = useMemo(() => prngFromSeed(seed), [seed]);
+  const rand = useCallback(() => (seed ? seededRand() : Math.random()), [seed, seededRand]);
 
   /* ===================== Load datasets ===================== */
   const [dict, setDict] = useState<Set<string> | null>(null);
@@ -189,7 +188,7 @@ export default function ChainMode() {
 
   // Skips & streak logic
   const [skips, setSkips] = useState(SKIP_START);
-  const [correctStreak, setCorrectStreak] = useState(0); // resets on any invalid submit or skip
+  const [correctStreak, setCorrectStreak] = useState(0);
 
   // 15s per-answer timer (+ freeze support)
   const [timeLeft, setTimeLeft] = useState(15);
@@ -204,7 +203,7 @@ export default function ChainMode() {
   const [category, setCategory] = useState<ChainKey>("animal");
 
   // Global / chain multipliers
-  const [basePowerMult, setBasePowerMult] = useState(1); // grows via powers (Influencer/Beast Mode)
+  const [basePowerMult, setBasePowerMult] = useState(1);
   const [chains, setChains] = useState<Record<ChainKey, ChainState>>({
     name: { length: 0, multiplier: 1 },
     animal: { length: 0, multiplier: 1 },
@@ -214,13 +213,13 @@ export default function ChainMode() {
     screen: { length: 0, multiplier: 1 },
   });
 
-  // Power charges per category (earned at each rule.threshold)
+  // Power charges
   const [powerCharges, setPowerCharges] = useState<Record<ChainKey, number>>({
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0,
   });
 
-  // Letter Roll (Foods) — legacy override (unused after we change last directly)
-  const [rerolledStartChar, setRerolledStartChar] = useState<string | null>(null);
+  // Ranked result link (for manual navigation)
+  const [resultHref, setResultHref] = useState<string | null>(null);
 
   const catSum =
     chains.name.multiplier +
@@ -233,19 +232,18 @@ export default function ChainMode() {
 
   /* ===================== Helpers ===================== */
   const pickStarter = useCallback(() => {
-    if (!dict) return "start";
-    const arr = Array.from(dict);
-    for (let i = 0; i < 500; i++) {
-      const c = arr[Math.floor(Math.random() * arr.length)];
-      if (c.length >= 4 && c.length <= 7) return c;
-    }
-    return "start";
-  }, [dict]);
+    if (!dict || dict.size === 0) return "start";
+    const arr = Array.from(dict).filter((w) => w.length >= 4 && w.length <= 7);
+    if (arr.length === 0) return "start";
+    const r = rand();
+    const idx = Math.floor(r * arr.length);
+    return arr[idx];
+  }, [dict, rand]);
 
   const nextCategory = useCallback(() => {
-    const n = ALL[Math.floor(Math.random() * ALL.length)];
-    setCategory(n);
-  }, []);
+    const idx = Math.floor(rand() * ALL.length);
+    setCategory(ALL[idx]);
+  }, [rand]);
 
   const resetRun = useCallback(() => {
     setIsOver(false);
@@ -264,7 +262,7 @@ export default function ChainMode() {
     setSkips(SKIP_START);
     setCorrectStreak(0);
     setShowBoard(false);
-    setRerolledStartChar(null);
+    setResultHref(null);
     freezeUntilRef.current = null;
     setFreezeLeft(0);
     setLast(pickStarter());
@@ -287,7 +285,7 @@ export default function ChainMode() {
       if (until && now < until) {
         const left = Math.max(0, Math.ceil((until - now) / 1000));
         setFreezeLeft(left);
-        return; // do not tick down timeLeft while frozen
+        return;
       } else {
         if (freezeLeft !== 0) setFreezeLeft(0);
       }
@@ -309,125 +307,138 @@ export default function ChainMode() {
     }
   }, [timeLeft, started, isOver, play]);
 
-  /* ===================== Auto-submit score on game over ===================== */
+  /* ===================== Auto-submit (now ALSO submits to Chain leaderboard) ===================== */
   const postedRef = useRef(false);
-  async function submitChainRunAuto(finalScore: number, longestChain: number) {
-    try {
-      const r = await fetch("/api/chain/submit", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ score: finalScore, longestChain }),
-      });
-      return r.ok;
-    } catch {
-      return false;
-    }
-  }
   useEffect(() => {
     if (!started || !isOver) return;
     if (postedRef.current) return;
     postedRef.current = true;
-    void submitChainRunAuto(score, used.size);
-  }, [started, isOver, score, used.size]);
 
-  /* ===================== Skip ===================== */
-  const doSkip = useCallback(() => {
-    if (isOver || !started) return;
-    if (skips <= 0) return;
-    setSkips((s) => Math.max(0, s - 1));
-    setCorrectStreak(0); // skip breaks streak
-    try { play("coin", { volume: 0.9 }); } catch {}
-    setLast(pickStarter());
-    nextCategory();
-    setRerolledStartChar(null); // clear any pending reroll
-    setTimeLeft(15);
-  }, [isOver, started, skips, play, pickStarter, nextCategory]);
+    const submit = async () => {
+      if (matchId) {
+        // Ranked/Ladder: submit ranked result, then also submit to Chain leaderboard
+        try {
+          await fetch(`/api/ranked/${matchId}`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ chainLength: used.size, score }),
+          });
+        } catch {}
+        // Submit to Chain leaderboard as well
+        try {
+          await fetch("/api/chain/submit", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ score, longestChain: used.size }),
+          });
+        } catch {}
+        setResultHref(`/play/ranked/result?match=${matchId}`);
+      } else {
+        // Normal Chain leaderboard
+        try {
+          await fetch("/api/chain/submit", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ score, longestChain: used.size }),
+          });
+        } catch {}
+      }
+    };
+    void submit();
+  }, [started, isOver, used.size, score, matchId]);
 
   /* ===================== Typing SFX ===================== */
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const onKeyDownSFX = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (isOver) return;
-      if (e.key.length === 1 && /^[a-zA-Z0-9' -]$/.test(e.key)) {
+      const k = e.key;
+      if (k.length === 1 && /[a-zA-Z0-9' -]/.test(k)) {
         try { play("typing", { volume: 0.7 }); } catch {}
       }
     },
     [isOver, play]
   );
 
-  /* ===================== Word accept routine ===================== */
+  /* ===================== Skip & accept ===================== */
   const grantSkipIfStreakMet = useCallback(() => {
     setCorrectStreak((prev) => {
       const next = prev + 1;
       if (next >= SKIP_STREAK_FOR_AWARD) {
-        // Award exactly +1, capped at SKIP_MAX, then reset streak to 0
         setSkips((s) => Math.min(SKIP_MAX, s + 1));
         return 0;
       }
       return next;
     });
   }, []);
+  const breakStreak = useCallback(() => setCorrectStreak(0), []);
 
-  const breakStreak = useCallback(() => {
+  const doSkip = useCallback(() => {
+    if (isOver || !started) return;
+    if (skips <= 0) return;
+    setSkips((s) => Math.max(0, s - 1));
     setCorrectStreak(0);
-  }, []);
+    try { play("coin", { volume: 0.9 }); } catch {}
+    setLast(pickStarter());
+    nextCategory();
+    setTimeLeft(15);
+  }, [isOver, started, skips, play, pickStarter, nextCategory]);
 
-  const applyAcceptedWord = useCallback(
-    (w: string) => {
-      const wl = w.toLowerCase();
+  const applyAcceptedWord = useCallback((w: string) => {
+    const wl = w.toLowerCase();
 
-      // (Removed auto same-letter power; now handled via Animals power)
-
-      // grow multipliers per categories + track lengths for progress grid
-      const enteringCats = getCategories(w);
-      setChains((prev) => {
-        const next = { ...prev };
-        enteringCats.forEach((k) => {
-          const c = next[k];
-          next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH) };
-        });
-        return next;
+    const enteringCats = getCategories(w);
+    setChains((prev) => {
+      const next = { ...prev };
+      enteringCats.forEach((k) => {
+        const c = next[k];
+        next[k] = { length: c.length + 1, multiplier: Math.max(1, c.multiplier + CHAIN_STEP_GROWTH) };
       });
+      return next;
+    });
 
-      // dynamic power charges based on per-category thresholds
-      setPowerCharges((prev) => {
-        const nx = { ...prev };
-        // only categories that this word belongs to
-        enteringCats.forEach((k) => {
-          const rule = POWER_RULES[k];
-          if (!rule?.threshold) return;
-          const before = chains[k].length; // prior snapshot
-          const after = before + 1;
-          const beforeTier = Math.floor(before / rule.threshold);
-          const afterTier = Math.floor(after / rule.threshold);
-          const gained = afterTier - beforeTier;
-          if (gained > 0) nx[k] = (nx[k] || 0) + gained;
-        });
-        return nx;
+    setPowerCharges((prev) => {
+      const nx = { ...prev };
+      enteringCats.forEach((k) => {
+        const rule = POWER_RULES[k];
+        if (!rule?.threshold) return;
+        const before = chains[k].length;
+        const after = before + 1;
+        const beforeTier = Math.floor(before / rule.threshold);
+        const afterTier = Math.floor(after / rule.threshold);
+        const gained = afterTier - beforeTier;
+        if (gained > 0) nx[k] = (nx[k] || 0) + gained;
       });
+      return nx;
+    });
 
-      // scoring
-      const catsArr = Array.from(enteringCats);
-      const base = catsArr.length ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1)) : CHAIN_BASE.normal;
-      const gainedPoints = Math.round(w.length * base * totalMult * Math.max(1, basePowerMult));
-      setScore((s) => s + gainedPoints);
+    // scoring
+    const catsArr = Array.from(enteringCats);
+    const base = catsArr.length ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1)) : CHAIN_BASE.normal;
+    const gainedPoints = Math.round(
+      w.length *
+        base *
+        (chains.name.multiplier +
+          chains.animal.multiplier +
+          chains.country.multiplier +
+          chains.food.multiplier +
+          chains.brand.multiplier +
+          chains.screen.multiplier || 1) *
+        Math.max(1, basePowerMult)
+    );
+    setScore((s) => s + gainedPoints);
 
-      try { play("accept"); } catch {}
-      try { vfx.ringBurstAtFromEl("input[name='word']"); } catch {}
+    try { play("accept"); } catch {}
+    try { vfx.ringBurstAtFromEl("input[name='word']"); } catch {}
 
-      setUsed((u) => new Set(u).add(wl));
-      setLast(w);
-      setRerolledStartChar(null); // no override needed after a successful play
-      setTimeLeft(15);
-      nextCategory();
+    setUsed((u) => new Set(u).add(wl));
+    setLast(w);
+    setTimeLeft(15);
+    nextCategory();
 
-      // streak-based skip award
-      grantSkipIfStreakMet();
-    },
-    [getCategories, nextCategory, play, vfx, totalMult, basePowerMult, grantSkipIfStreakMet, chains]
-  );
+    grantSkipIfStreakMet();
+  }, [getCategories, nextCategory, play, vfx, basePowerMult, chains, grantSkipIfStreakMet]);
 
-  /* ===================== Power: helpers ===================== */
+  /* ===================== Powers ===================== */
   const getSetForCategory = useCallback((cat: ChainKey): Set<string> => {
     switch (cat) {
       case "animal": return animals;
@@ -440,31 +451,19 @@ export default function ChainMode() {
   }, [animals, countries, names, foods, brands, screens]);
 
   const pickAutoWordForCurrent = useCallback(async (): Promise<string | null> => {
-    // "ChatGPT" power: play a valid word in the CURRENT category that matches link rules
     const pool = Array.from(getSetForCategory(category) || []);
     if (!pool.length) return null;
 
-    const requiredStart = ((): string | null => {
-      if (last === "start") return null;
-      const effective = lastLetter(last).toLowerCase(); // reroll now mutates 'last' directly
-      return effective;
-    })();
-    const requiredContains = ((): string | null => {
-      if (last === "start") return null;
-      return firstLetter(last).toLowerCase();
-    })();
+    const requiredStart = last === "start" ? null : lastLetter(last).toLowerCase();
+    const requiredContains = last === "start" ? null : firstLetter(last).toLowerCase();
 
     for (let tries = 0; tries < 1200; tries++) {
-      const w = pool[Math.floor(Math.random() * pool.length)];
+      const w = pool[Math.floor(rand() * pool.length)];
       const wlow = w.toLowerCase();
       if (used.has(wlow)) continue;
 
-      if (requiredStart) {
-        if (wlow[0] !== requiredStart) continue;
-      }
-      if (requiredContains) {
-        if (!wlow.includes(requiredContains)) continue;
-      }
+      if (requiredStart && wlow[0] !== requiredStart) continue;
+      if (requiredContains && !wlow.includes(requiredContains)) continue;
 
       const ok = await validateWord(w);
       if (!ok) continue;
@@ -475,25 +474,21 @@ export default function ChainMode() {
       return w;
     }
     return null;
-  }, [category, getSetForCategory, last, used, validateWord, getCategories]);
+  }, [category, getSetForCategory, last, used, validateWord, getCategories, rand]);
 
   const triggerPower = useCallback(async (cat: ChainKey) => {
     const rule = POWER_RULES[cat];
     if (!rule?.threshold || (powerCharges[cat] ?? 0) <= 0) return;
 
-    // consume one charge first
     setPowerCharges((prev) => ({ ...prev, [cat]: Math.max(0, (prev[cat] || 0) - 1) }));
 
     if (cat === "country") {
-      // Nuke: reset used set
       setUsed(new Set());
       try { play("nuke"); } catch {}
       try { vfx.glowOnce("main"); } catch {}
     } else if (cat === "name") {
-      // ChatGPT: auto-play a valid word meeting rules
       const chosen = await pickAutoWordForCurrent();
       if (!chosen) {
-        // refund if nothing could be found
         setPowerCharges((prev) => ({ ...prev, [cat]: (prev[cat] || 0) + 1 }));
         try { play("invalid"); } catch {}
         try { vfx.shake(".rounded-2xl.border.p-5", 350); } catch {}
@@ -503,26 +498,21 @@ export default function ChainMode() {
       try { vfx.confettiBurst({ power: 0.6 }); } catch {}
       applyAcceptedWord(chosen);
     } else if (cat === "food") {
-      // Letter Roll: actually change the *last letter* of the current 'last' word
-      // (affects both UI and the validation rule going forward)
       const alphabet = "abcdefghijklmnopqrstuvwxyz";
       if (last !== "start") {
         const current = lastLetter(last).toLowerCase();
         let nextChar: string | null = current;
         let guard = 0;
         while (nextChar === current && guard < 100) {
-          nextChar = alphabet[Math.floor(Math.random() * alphabet.length)];
+          nextChar = alphabet[Math.floor(rand() * alphabet.length)];
           guard++;
         }
-        // mutate 'last' so rules & display both use the new letter
         const base = last.slice(0, -1);
         setLast(base + (nextChar as string));
-        setRerolledStartChar(null); // legacy var not needed anymore
       }
       try { play("roll"); } catch {}
       try { vfx.ringBurstAtFromEl(".rounded-2xl.border.p-5"); } catch {}
     } else if (cat === "screen") {
-      // Time Freeze: freeze the clock for 15 seconds
       const now = Date.now();
       const extra = 15_000;
       const current = freezeUntilRef.current && freezeUntilRef.current > now ? freezeUntilRef.current : now;
@@ -531,21 +521,17 @@ export default function ChainMode() {
       try { play("freeze"); } catch {}
       try { vfx.glowOnce(".h-2.w-full.rounded-full"); } catch {}
     } else if (cat === "brand") {
-      // Influencer: +3 to base multiplier (additive)
       setBasePowerMult((m) => m + 3);
       try { play("influencer"); } catch {}
       try { vfx.confettiBurst({ power: 0.9 }); } catch {}
     } else if (cat === "animal") {
-      // Beast Mode: +1 to global base multiplier
       setBasePowerMult((m) => m + 1);
       try { play("same-letter-power"); } catch {}
       try { vfx.confettiBurst({ power: 0.35 }); } catch {}
-    } else {
-      // No power configured
     }
-  }, [powerCharges, play, vfx, pickAutoWordForCurrent, applyAcceptedWord, last]);
+  }, [powerCharges, play, vfx, pickAutoWordForCurrent, applyAcceptedWord, last, rand]);
 
-  /* ===================== Form submit ===================== */
+  /* ===================== Submit handler ===================== */
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const input = (e.target as HTMLFormElement).word as unknown as HTMLInputElement;
@@ -555,44 +541,40 @@ export default function ChainMode() {
     const wl = w.toLowerCase();
     input.value = "";
 
-    // already used
     if (used.has(wl)) {
-      breakStreak();
+      setCorrectStreak(0);
       try { play("used"); } catch {}
       try { vfx.shake("input[name='word']", 300); } catch {}
       return;
     }
 
-    // classic link rule (now purely from the (possibly mutated) 'last')
     if (last !== "start") {
       const requiredStart = lastLetter(last).toLowerCase();
       if (w[0].toLowerCase() !== requiredStart) {
-        breakStreak();
+        setCorrectStreak(0);
         try { play("invalid"); } catch {}
         try { vfx.shake("input[name='word']", 300); } catch {}
         return;
       }
       if (!w.toLowerCase().includes(firstLetter(last).toLowerCase())) {
-        breakStreak();
+        setCorrectStreak(0);
         try { play("invalid"); } catch {}
         try { vfx.shake("input[name='word']", 300); } catch {}
         return;
       }
     }
 
-    // must match current category
     const cats = detectors.getCategories(w);
     if (!cats.has(category)) {
-      breakStreak();
+      setCorrectStreak(0);
       try { play("invalid"); } catch {}
       try { vfx.glowOnce(".rounded-2xl.border.p-5"); } catch {}
       return;
     }
 
-    // dictionary / validation
     const ok = await validateWord(w);
     if (!ok) {
-      breakStreak();
+      setCorrectStreak(0);
       try { play("invalid"); } catch {}
       try { vfx.shake("input[name='word']", 300); } catch {}
       return;
@@ -703,7 +685,6 @@ export default function ChainMode() {
             {/* Input row + Skip */}
             <form onSubmit={onSubmit} className="flex gap-2">
               <input
-                ref={inputRef}
                 name="word"
                 placeholder="Type your next word…"
                 className="grow rounded-2xl border px-4 py-3 outline-none ring-0
@@ -748,7 +729,7 @@ export default function ChainMode() {
               </div>
             </div>
 
-            {/* Category progress grid with per-category thresholds */}
+            {/* Category progress grid */}
             <div className="space-y-2">
               <div className="text-sm uppercase tracking-wide opacity-70">Category Powers</div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -765,7 +746,6 @@ export default function ChainMode() {
                       key={cat}
                       className={`relative overflow-hidden rounded-2xl border px-3 py-3 bg-white/70 dark:bg-slate-900/60 ${CAT_BORDER[cat]}`}
                     >
-                      {/* Fill gradient */}
                       {threshold && (
                         <div
                           className={`pointer-events-none absolute inset-y-0 left-0 w-full bg-gradient-to-r ${CAT_COLORS[cat]}`}
@@ -795,25 +775,19 @@ export default function ChainMode() {
                             className={`rounded-full px-3 py-1 text-xs font-semibold shadow ${
                               threshold && charges > 0
                                 ? "bg-emerald-600 text-white hover:opacity-90"
-                                : threshold
-                                  ? "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
-                                  : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+                                : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
                             }`}
                             disabled={!threshold || charges <= 0}
                             onClick={() => triggerPower(cat)}
                             title={
                               threshold
                                 ? (charges > 0
-                                    ? `Use ${POWER_RULES[cat].label} (${charges})`
-                                    : `Fill ${threshold} in ${CAT_LABELS[cat]} to unlock ${POWER_RULES[cat].label}`)
+                                  ? `Use ${POWER_RULES[cat].label} (${charges})`
+                                  : `Fill ${threshold} in ${CAT_LABELS[cat]} to unlock ${POWER_RULES[cat].label}`)
                                 : "No power configured"
                             }
                           >
-                            {threshold
-                              ? (charges > 0
-                                  ? `${POWER_RULES[cat].label} (${charges})`
-                                  : `${POWER_RULES[cat].label ?? "Locked"}`)
-                              : "No Power"}
+                            {threshold ? (POWER_RULES[cat].label ?? "Locked") : "No Power"}
                           </button>
                         </div>
                       </div>
@@ -822,17 +796,17 @@ export default function ChainMode() {
                 })}
               </div>
               <div className="text-xs opacity-70">
-                Countries(5) → <b>Nuke</b>; Names(5) → <b>ChatGPT</b>; Foods(3) → <b>Letter Roll</b> (changes the last letter); TV/Movies(3) → <b>Time Freeze</b>; Brands(3) → <b>Influencer (+3 Base)</b>; Animals(3) → <b>Beast Mode (+1 Base)</b>.
+                Countries(5) → <b>Nuke</b>; Names(5) → <b>ChatGPT</b>; Foods(3) → <b>Letter Roll</b>; TV/Movies(3) → <b>Time Freeze</b>; Brands(3) → <b>Influencer (+3 Base)</b>; Animals(3) → <b>Beast Mode (+1 Base)</b>.
               </div>
             </div>
           </div>
         )}
 
-        {/* Run over: stats + inline leaderboard toggle */}
+        {/* Run over: stats + actions (no auto-redirect) */}
         {isOver && (
           <div className="rounded-2xl border p-6 text-center bg-white/80 border-gray-200 dark:bg-slate-900/80 dark:border-slate-700">
             <h2 className="mb-1 text-xl font-bold">Run Over</h2>
-            <p className="opacity-80">Your score has been submitted.</p>
+            <p className="opacity-80">{matchId ? "Your ranked result has been submitted." : "Your score has been submitted."}</p>
 
             <div className="mx-auto mt-4 grid max-w-md grid-cols-2 gap-4 text-left">
               <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
@@ -852,12 +826,37 @@ export default function ChainMode() {
               >
                 Play Again
               </button>
-              <button
-                onClick={() => setShowBoard(true)}
-                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-              >
-                View Leaderboard
-              </button>
+
+              {matchId ? (
+                <>
+                  <Link
+                    href={resultHref || "#"}
+                    className={`rounded-2xl border px-5 py-3 ${resultHref ? "hover:bg-slate-50 dark:hover:bg-slate-800" : "opacity-60 cursor-wait"}`}
+                  >
+                    {resultHref ? "View Match Result" : "Finalizing…"}
+                  </Link>
+                  <button
+                    onClick={() => setShowBoard(true)}
+                    className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+                  >
+                    View Leaderboard
+                  </button>
+                  <Link
+                    href="/play/ranked/ladder"
+                    className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+                  >
+                    Play Ladder
+                  </Link>
+                </>
+              ) : (
+                <button
+                  onClick={() => setShowBoard(true)}
+                  className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+                >
+                  View Leaderboard
+                </button>
+              )}
+
               <Link
                 href="/play"
                 className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
@@ -866,6 +865,7 @@ export default function ChainMode() {
               </Link>
             </div>
 
+            {/* Show leaderboard for both normal & ranked when toggled */}
             {showBoard && (
               <div className="mt-8 text-left">
                 <ChainLeaderboard />

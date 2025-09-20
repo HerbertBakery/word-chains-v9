@@ -31,6 +31,12 @@ model User {
 
   // NEW: back-ref for Chain Mode runs
   chainRuns ChainRun[]
+
+  // NEW: back-refs for RankedMatch relations
+  rankedAsPlayerOne RankedMatch[]  @relation("RankedPlayerOne")
+  rankedAsPlayerTwo RankedMatch[]  @relation("RankedPlayerTwo")
+  RankedRating      RankedRating[]
+  LadderTicket      LadderTicket?
 }
 
 model Account {
@@ -190,21 +196,20 @@ model DailyPiece {
  * Stores score + longest chain; supports guests via deviceId and optional playerName.
  */
 model ChainRun {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt  // 👈 add @default(now())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt // 👈 add @default(now())
 
-  userId     String?
-  deviceId   String?
-  playerName String?
-  seasonKey  String   @default("global")
+  userId       String?
+  deviceId     String?
+  playerName   String?
+  seasonKey    String  @default("global")
   score        Int
   longestChain Int
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user         User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([userId, seasonKey], name: "uniq_chain_user_season")
   @@unique([deviceId, seasonKey], name: "uniq_chain_device_season")
-
   @@index([seasonKey, score(sort: Desc), createdAt], name: "idx_chain_season_score")
   @@index([seasonKey, longestChain(sort: Desc), createdAt], name: "idx_chain_season_longest")
   @@index([createdAt], name: "idx_chain_created")
@@ -212,3 +217,66 @@ model ChainRun {
   @@index([deviceId], name: "idx_chain_device")
 }
 
+/**
+ * ========= NEW: Ladder / Elo support =========
+ */
+model RankedRating {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int      @default(1200)
+  wins      Int      @default(0)
+  losses    Int      @default(0)
+  draws     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model LadderTicket {
+  id             String   @id @default(cuid())
+  userId         String
+  createdAt      DateTime @default(now())
+  matchedMatchId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([createdAt])
+}
+
+enum RankedKind {
+  DUEL // Play a Friend
+  LADDER // Elo matchmaking
+}
+
+/**
+ * ========= NEW: Ranked Chain battles (same-seed, longest chain wins) =========
+ */
+model RankedMatch {
+  id        String   @id @default(cuid())
+  seed      String
+  createdAt DateTime @default(now())
+
+  // NEW: match flavor (friend duel vs ladder)
+  kind RankedKind @default(DUEL)
+
+  // Players
+  playerOneId String
+  playerOne   User   @relation("RankedPlayerOne", fields: [playerOneId], references: [id])
+
+  playerTwoId String?
+  playerTwo   User?   @relation("RankedPlayerTwo", fields: [playerTwoId], references: [id])
+
+  // Results
+  playerOneChainLength Int?
+  playerOneScore       Int?
+  playerTwoChainLength Int?
+  playerTwoScore       Int?
+
+  // NEW — Elo deltas (only for LADDER matches)
+  ratingDeltaOne Int?
+  ratingDeltaTwo Int?
+
+  winnerId    String?
+  completedAt DateTime?
+
+  @@index([createdAt])
+}

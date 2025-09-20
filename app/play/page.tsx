@@ -60,6 +60,22 @@ export default function PlayChooser() {
               <span className="badge badge-indigo">Endurance</span>
             </div>
           </Link>
+
+          {/* Ranked Mode */}
+          <Link
+            href="/play/ranked"
+            className="card hover:shadow-md transition"
+          >
+            <div className="text-lg font-semibold">Ranked Mode</div>
+            <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
+              Compete on a shared seed. Play Ladder for Elo or challenge a friend with a share link.
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 text-sm">
+              <span className="badge badge-rose">Elo</span>
+              <span className="badge badge-indigo">Ladder</span>
+              <span className="badge badge-emerald">Play a Friend</span>
+            </div>
+          </Link>
         </div>
       </div>
     </>
