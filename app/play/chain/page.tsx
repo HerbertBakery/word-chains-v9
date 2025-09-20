@@ -2,7 +2,6 @@
 "use client";
 
 export const dynamic = "force-dynamic"; // avoid SSG issues with search params
-export const revalidate = 0;
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
