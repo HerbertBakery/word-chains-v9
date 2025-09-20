@@ -1,223 +1,254 @@
 // app/play/ranked/result/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { useSession, signIn } from "next-auth/react";
-import Link from "next/link";
-import { tierForRating, deltaClass, fmtDelta } from "@/lib/rank";
-import RankBadge from "@/app/components/rank/RankBadge";
-import { useVFX, VfxProvider } from "@/app/hooks/useVFX";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-type Match = {
+import React, { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { useSearchParams } from "next/navigation";
+
+type RankedUser = {
   id: string;
-  kind?: "DUEL" | "LADDER";
-  seed: string;
-  createdAt: string;
-  playerOneId: string;
-  playerTwoId: string | null;
-  playerOneChainLength: number | null;
-  playerOneScore: number | null;
-  playerTwoChainLength: number | null;
-  playerTwoScore: number | null;
-  ratingDeltaOne?: number | null;
-  ratingDeltaTwo?: number | null;
-  winnerId: string | null;
-  completedAt: string | null;
+  name?: string | null;
+  username?: string | null;
+  image?: string | null;
 };
 
-type Me = { rating: number; wins: number; losses: number; draws: number };
+type RankedMatch = {
+  id: string;
+  seed: string;
+  createdAt: string;
+  playerOne?: RankedUser | null;
+  playerTwo?: RankedUser | null;
+  playerOneChainLength?: number | null;
+  playerTwoChainLength?: number | null;
+  playerOneScore?: number | null;
+  playerTwoScore?: number | null;
+  winnerId?: string | null;
+  ratingDeltaOne?: number | null;
+  ratingDeltaTwo?: number | null;
+};
 
-export default function RankedResultPage() {
-  const { data: session } = useSession();
+function fmtDelta(n: number) {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+function deltaClass(n: number) {
+  return n > 0 ? "text-emerald-600" : n < 0 ? "text-rose-600" : "text-slate-500";
+}
+
+function ResultInner() {
   const sp = useSearchParams();
-  const vfx = useVFX();
+  const matchId = sp.get("match") || "";
 
-  const matchId = sp.get("match");
-  const [m, setM] = useState<Match | null>(null);
-  const [me, setMe] = useState<Me | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<RankedMatch | null>(null);
+  const [loading, setLoading] = useState<boolean>(!!matchId);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!matchId) return;
-    const load = async () => {
-      try {
-        const [mRes, meRes] = await Promise.all([
-          fetch(`/api/ranked/${matchId}`),
-          fetch(`/api/ladder/me`),
-        ]);
-        const mJ = await mRes.json();
-        const meJ = meRes.ok ? await meRes.json() : null;
-        setM(mJ);
-        setMe(meJ);
-      } finally {
+    let alive = true;
+    async function run() {
+      if (!matchId) {
+        setError("Missing match id.");
         setLoading(false);
+        return;
       }
+      try {
+        setLoading(true);
+        const r = await fetch(`/api/ranked/${matchId}`, { cache: "no-store" });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error || `Failed to load match (${r.status})`);
+        }
+        const j = (await r.json()) as RankedMatch;
+        if (alive) setData(j);
+      } catch (e: any) {
+        if (alive) setError(e?.message ?? "Failed to load result");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    run();
+    return () => {
+      alive = false;
     };
-    load();
   }, [matchId]);
 
-  // Status flags
-  const bothDone = !!(m && m.playerOneChainLength !== null && m.playerTwoChainLength !== null);
-  const exactTie = !!(m && bothDone && !m.winnerId && (m.playerOneScore ?? 0) === (m.playerTwoScore ?? 0));
-  const pending = !!(m && !m.winnerId && !exactTie && !bothDone);
+  const decided = useMemo(() => {
+    if (!data) return false;
+    if (data.winnerId !== null && data.winnerId !== undefined) return true;
+    // fall back: both sides submitted identical stats (exact tie)
+    const bothHave =
+      data.playerOneChainLength !== null &&
+      data.playerOneChainLength !== undefined &&
+      data.playerTwoChainLength !== null &&
+      data.playerTwoChainLength !== undefined;
+    return bothHave;
+  }, [data]);
 
-  // My delta/promotions only when decided + ladder
-  const { myDelta, myPrevRating, myCurrRating, promotedTo } = useMemo(() => {
-    if (!m || !me || !session?.user?.id) return { myDelta: 0, myPrevRating: null as number | null, myCurrRating: null as number | null, promotedTo: null as string | null };
-    if (pending || (m.kind ?? "LADDER") !== "LADDER") return { myDelta: 0, myPrevRating: null, myCurrRating: null, promotedTo: null };
-    const amP1 = m.playerOneId === session.user.id;
-    const delta = amP1 ? (m.ratingDeltaOne ?? 0) : (m.ratingDeltaTwo ?? 0);
-    const curr = me.rating;
-    const prev = curr - delta;
-    const oldTier = tierForRating(prev).name;
-    const newTier = tierForRating(curr).name;
-    return {
-      myDelta: delta,
-      myPrevRating: prev,
-      myCurrRating: curr,
-      promotedTo: newTier !== oldTier && curr > prev ? `${newTier}${tierForRating(curr).division ? " " + tierForRating(curr).division : ""}` : null,
-    };
-  }, [m, me, session?.user?.id, pending]);
+  const p1 = data?.playerOne;
+  const p2 = data?.playerTwo;
 
-  // Confetti if I gained Elo or got promoted (only when decided)
-  useEffect(() => {
-    if (!m || (m.kind ?? "LADDER") !== "LADDER" || pending) return;
-    if (myDelta > 0) {
-      try { vfx.confettiBurst({ power: 0.9 }); } catch {}
-    }
-  }, [m, myDelta, pending, vfx]);
+  const p1Name = p1?.name || p1?.username || "Player One";
+  const p2Name = p2?.name || p2?.username || (p2 ? "Player Two" : "Waiting…");
 
-  if (!session?.user) {
-    return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-2">Match Result</h1>
-        <p className="mb-4">Sign in to view your ranked results.</p>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={() => signIn()}>
-          Sign in
-        </button>
-      </div>
-    );
-  }
-
-  if (loading || !m) {
-    return <div className="p-6">Loading result…</div>;
-  }
-
-  const iWon = m.winnerId === session.user.id;
-
-  const kind = m.kind ?? "LADDER";
-  const headline =
-    pending
-      ? "Result pending…"
-      : kind === "DUEL"
-        ? (iWon ? "You won the duel!" : exactTie ? "It’s a tie." : "You lost the duel.")
-        : (iWon ? "You won the ladder match!" : exactTie ? "It’s a tie." : "You lost the ladder match.");
-
-  const sub =
-    pending
-      ? "We’re waiting for the opponent to finish. Your result will update automatically."
-      : (kind === "LADDER" ? "Elo updates are shown below. Longest chain wins; score breaks ties." : "Duel matches don’t affect Elo.");
+  const p1Delta = data?.ratingDeltaOne ?? 0;
+  const p2Delta = data?.ratingDeltaTwo ?? 0;
 
   return (
-    <VfxProvider>
-      <div className="mx-auto max-w-3xl p-6 space-y-5">
-        {/* Season ribbon */}
-        <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs border-indigo-300/60 dark:border-indigo-500/40 bg-indigo-50/60 dark:bg-indigo-500/10">
-          <span>🏅 Season 1</span>
-          <span className="opacity-70">WordChains Ladder</span>
-        </div>
+    <main className="mx-auto max-w-3xl px-4 py-8 text-slate-900 dark:text-slate-200">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Ladder Match Result</h1>
+        <Link
+          href="/play"
+          className="text-sm underline opacity-80 hover:opacity-100 text-slate-700 dark:text-slate-300"
+        >
+          ← All Modes
+        </Link>
+      </div>
 
-        <h1 className="text-3xl font-bold">{headline}</h1>
-        <p className="opacity-70">{sub}</p>
+      <div className="card">
+        {!matchId && (
+          <div className="text-sm text-rose-600">No match id provided.</div>
+        )}
 
-        {/* Promotion / rating card (only when decided + ladder) */}
-        {me && !pending && kind === "LADDER" && (
-          <div className="rounded-2xl border p-5 bg-white/70 dark:bg-slate-900/60 dark:border-slate-700 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <RankBadge rating={me.rating} />
-              {myPrevRating !== null && (
-                <div className="text-sm opacity-70">
-                  {myPrevRating} → <span className="font-semibold">{myCurrRating}</span>
-                </div>
-              )}
-            </div>
-            {(myDelta !== 0) && (
-              <div className={`text-sm font-semibold ${deltaClass(myDelta)}`}>
-                {fmtDelta(myDelta)}
-              </div>
-            )}
+        {loading && (
+          <div className="animate-pulse space-y-3">
+            <div className="h-4 w-40 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-64 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-24 w-full rounded bg-slate-200 dark:bg-slate-700" />
           </div>
         )}
 
-        {/* Breakdown card */}
-        <div className="rounded-2xl border p-5 bg-white/70 dark:bg-slate-900/60 dark:border-slate-700">
-          <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Match</div>
-          <div className="text-xs opacity-60 mb-3">Seed: <span className="font-mono">{m.seed}</span></div>
+        {!loading && error && (
+          <div className="text-sm text-rose-600">{error}</div>
+        )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <PlayerCard
-              title="Player One"
-              winner={m.winnerId === m.playerOneId}
-              chain={m.playerOneChainLength}
-              score={m.playerOneScore}
-              delta={kind === "LADDER" && !pending ? (m.ratingDeltaOne ?? 0) : null}
-            />
-            <PlayerCard
-              title="Player Two"
-              winner={m.winnerId === m.playerTwoId}
-              chain={m.playerTwoChainLength}
-              score={m.playerTwoScore}
-              delta={kind === "LADDER" && !pending ? (m.ratingDeltaTwo ?? 0) : null}
-            />
-          </div>
+        {!loading && !error && data && (
+          <>
+            {/* Header: players */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                {p1?.image && (
+                  <Image
+                    src={p1.image}
+                    alt=""
+                    width={36}
+                    height={36}
+                    className="rounded-full"
+                  />
+                )}
+                <div className="text-sm">
+                  <div className="font-semibold">{p1Name}</div>
+                  <div className="opacity-60 text-xs">
+                    Chain {data.playerOneChainLength ?? "—"} • Score {data.playerOneScore ?? "—"}
+                  </div>
+                  {decided && p1Delta !== 0 && (
+                    <div className={`text-xs ${deltaClass(p1Delta)}`}>{fmtDelta(p1Delta)}</div>
+                  )}
+                </div>
+              </div>
 
-          <div className="mt-4 flex items-center gap-3">
-            <Link
-              href="/play/ranked/ladder"
-              className="rounded-2xl bg-black text-white px-5 py-3 shadow hover:opacity-90"
-            >
-              Play Ladder
-            </Link>
-            <Link
-              href="/play/ranked/recent"
-              className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-            >
-              Recent Games
-            </Link>
-            <Link
-              href="/play/ranked"
-              className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-            >
-              Ranked Hub
-            </Link>
-          </div>
-        </div>
+              <div className="text-xs opacity-70 hidden sm:block">
+                Seed: {data.seed}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="font-semibold text-sm">{p2Name}</div>
+                  <div className="opacity-60 text-xs">
+                    Chain {data.playerTwoChainLength ?? "—"} • Score {data.playerTwoScore ?? "—"}
+                  </div>
+                  {decided && p2Delta !== 0 && (
+                    <div className={`text-xs ${deltaClass(p2Delta)}`}>{fmtDelta(p2Delta)}</div>
+                  )}
+                </div>
+                {p2?.image && (
+                  <Image
+                    src={p2.image}
+                    alt=""
+                    width={36}
+                    height={36}
+                    className="rounded-full"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Verdict copy */}
+            <div className="mt-4 text-sm">
+              {decided ? (
+                data.winnerId ? (
+                  <span className="font-medium">
+                    {data.winnerId === p1?.id
+                      ? `${p1Name} wins!`
+                      : data.winnerId === p2?.id
+                        ? `${p2Name} wins!`
+                        : "Winner decided."}
+                  </span>
+                ) : (
+                  <span className="opacity-70">Exact tie.</span>
+                )
+              ) : (
+                <span className="opacity-70">
+                  Waiting for opponent’s result… You’ll see the outcome here once both runs are submitted.
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 text-xs opacity-60">
+              {new Date(data.createdAt).toLocaleString()}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                href="/play/ranked/ladder"
+                className="rounded-2xl bg-black px-5 py-3 text-white shadow hover:opacity-90"
+              >
+                Play Ladder
+              </Link>
+              <Link
+                href="/play/ranked/recent"
+                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
+                View Recent Matches
+              </Link>
+              <Link
+                href={`/play/chain?seed=${encodeURIComponent(data.seed)}&match=${encodeURIComponent(data.id)}`}
+                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
+                Replay This Seed
+              </Link>
+              <Link
+                href="/play"
+                className="rounded-2xl border px-5 py-3 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
+                Back to Modes
+              </Link>
+            </div>
+          </>
+        )}
       </div>
-    </VfxProvider>
+    </main>
   );
 }
 
-function PlayerCard({
-  title,
-  winner,
-  chain,
-  score,
-  delta,
-}: {
-  title: string;
-  winner: boolean;
-  chain: number | null;
-  score: number | null;
-  delta: number | null;
-}) {
+export default function RankedResultPage() {
   return (
-    <div className={`rounded-xl border p-4 ${winner ? "border-emerald-400/70 dark:border-emerald-600/70" : "border-slate-200 dark:border-slate-700"}`}>
-      <div className="text-sm font-semibold mb-1">{title}</div>
-      <div className="text-xs opacity-70">Chain: <b>{chain ?? "—"}</b> • Score: <b>{score ?? "—"}</b></div>
-      {delta !== null && delta !== 0 && (
-        <div className={`mt-2 text-sm ${deltaClass(delta)}`}>{fmtDelta(delta)}</div>
-      )}
-    </div>
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-3xl px-4 py-8">
+          <div className="card animate-pulse space-y-3">
+            <div className="h-4 w-40 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-64 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-24 w-full rounded bg-slate-200 dark:bg-slate-700" />
+          </div>
+        </main>
+      }
+    >
+      <ResultInner />
+    </Suspense>
   );
 }
