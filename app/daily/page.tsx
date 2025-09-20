@@ -1,9 +1,26 @@
+// app/play/daily/page.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DailySpec, DailyGoal, ChainKey } from "@/types/daily";
 import Link from "next/link";
 import { useSession, signIn } from "next-auth/react";
+
+/* ===== Local types (decouple from external to avoid import churn) ===== */
+type ChainKey = "name" | "animal" | "country" | "food" | "brand" | "screen";
+type DailyGoal =
+  | { kind: "category"; cat: ChainKey; count: number }
+  | { kind: "trick"; trick: "sameEnds" | "chain"; count: number }
+  | { kind: "letter"; letter: string; count: number };
+
+type DailySpec = {
+  id: string;
+  specId: string;
+  dateKey: string;
+  timeSeconds: number;
+  starter: string;
+  goals: DailyGoal[];
+  signature: string;
+};
 
 /* ===== Reuse your hooks ===== */
 import { useSound } from "@/app/hooks/useSound";
@@ -13,7 +30,7 @@ import { useVFX } from "@/app/hooks/useVFX";
 import { LoadingBar } from "@/app/components/LoadingBar";
 
 /* ===== Constants ===== */
-const HIDDEN_WORD_BONUS = 5000;
+const HIDDEN_WORD_BONUS = 1500;
 
 /* ===== Input + normalization helpers (mirrors main game) ===== */
 const INPUT_RE = /^[a-zA-Z][a-zA-Z\s'\-&.]*$/;
@@ -59,6 +76,7 @@ type Datasets = {
 
 type StreakInfo = { current: number; best?: number; todayPlayed?: boolean };
 
+/* ===== Scoring weights (unchanged, still used for points—not goals) ===== */
 const CHAIN_BASE: Record<"normal" | ChainKey, number> = {
   normal: 1,
   name: 2,
@@ -127,6 +145,40 @@ function mulberry32(a: number) {
 }
 const pickFrom = <T,>(arr: T[], rnd: () => number) =>
   arr[Math.floor(rnd() * arr.length)];
+
+/* =========================================================================
+   Letter goal normalization → Always "Starts with S" with 10–20 target
+   ========================================================================= */
+function sGoalCount(seedStr?: string): number {
+  const seed = xmur3(`wc_s_goal_${seedStr || "default"}`)();
+  const rnd = mulberry32(seed);
+  // inclusive int 5..9
+  return 5 + Math.floor(rnd() * 5);
+}
+
+
+/** Keep at most 1 letter goal; override to a single S-goal (10–20); total 6 goals. */
+function normalizeGoals(src: DailyGoal[], seedStr?: string): DailyGoal[] {
+  if (!Array.isArray(src)) return [];
+
+  // Build our S goal (override any letters from server)
+  const sGoal: DailyGoal = { kind: "letter", letter: "s", count: sGoalCount(seedStr) };
+
+  // Filter out any existing letter goals from server—replace with just S
+  const nonLetters = src.filter(g => g.kind !== "letter");
+
+  // Compose list with S-goal + non-letters truncated to 6 total (prefer 5 non-letter + 1 letter)
+  const result: DailyGoal[] = [];
+  const maxNonLetter = 5; // leave room for our single S goal
+  for (const g of nonLetters) {
+    if (result.length >= maxNonLetter) break;
+    result.push(g);
+  }
+  result.push(sGoal);
+
+  return result.slice(0, 6);
+}
+
 /* ===== Page component ===== */
 export default function DailyPage() {
   const { data: session } = useSession();
@@ -213,6 +265,7 @@ export default function DailyPage() {
       setLoading(false);
     })();
   }, []);
+
   /* ===== Spec from server ===== */
   const [spec, setSpec] = useState<DailySpec | null>(null);
   const [serverStartedAt, setServerStartedAt] = useState<number | undefined>(undefined);
@@ -259,16 +312,20 @@ export default function DailyPage() {
     fetchSpec();
   }, [fetchSpec]);
 
-  /* ===== Allowed categories (derived from spec goals) ===== */
+  /* ===== Client-normalized goals (6 total, exactly 1 letter: S, count 10–20) ===== */
+  const clientGoals: DailyGoal[] = useMemo(
+    () => normalizeGoals(spec?.goals ?? [], spec?.id),
+    [spec?.goals, spec?.id]
+  );
+
+  /* ===== Allowed categories (derived from client goals) ===== */
   const allowedCats: Set<ChainKey> = useMemo(() => {
     const set = new Set<ChainKey>();
-    if (spec?.goals) {
-      for (const g of spec.goals) {
-        if (g.kind === "category") set.add(g.cat);
-      }
+    for (const g of clientGoals) {
+      if (g.kind === "category") set.add(g.cat);
     }
     return set;
-  }, [spec]);
+  }, [clientGoals]);
 
   const allowedCatsList = useMemo(
     () => Array.from(allowedCats).map(c => CHAIN_COLORS[c].label).join(", "),
@@ -292,7 +349,10 @@ export default function DailyPage() {
     name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0,
   });
 
-  // multipliers
+  // per-letter starts counter (for letter goals)
+  const [letterCounts, setLetterCounts] = useState<Record<string, number>>({});
+
+  // multipliers (still for points)
   const [catMult, setCatMult] = useState<Record<ChainKey, number>>({
     name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1,
   });
@@ -346,8 +406,7 @@ export default function DailyPage() {
     if (!started || timeLeft > 0) return;
     try { (stop as any)("warning"); warningPlayingRef.current = false; } catch {}
     endRun("Time's up!");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+  }, [timeLeft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetRun = useCallback(() => {
     setTimeLeft(spec?.timeSeconds ?? 120);
@@ -362,6 +421,7 @@ export default function DailyPage() {
     setCatsCount({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0 });
     setCatMult({ name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1 });
     setSameMult(1);
+    setLetterCounts({});
   }, [spec]);
 
   const [showStats, setShowStats] = useState(false);
@@ -478,7 +538,6 @@ export default function DailyPage() {
     };
 
     // choose up to three distinct categories from today's set.
-    // if fewer than 3 available, cycle to fill.
     const distinctCats = shuffleArray(todaysCats, rnd).slice(0, Math.min(3, todaysCats.length));
     const chosenForThree: ChainKey[] = [];
     if (distinctCats.length >= 3) {
@@ -541,7 +600,7 @@ export default function DailyPage() {
     [hiddenWordsFiltered, usedHidden]
   );
 
-  /* ===== Score SFX one-shots (adjusted thresholds) ===== */
+  /* ===== Score SFX one-shots (kept; score is still a thing, just not a GOAL) ===== */
   const SINGLE_WORD_SFX: Array<{ threshold: number; key: string }> = [
     { threshold: 800,   key: "word_1k" },
     { threshold: 1500,  key: "bigword" },
@@ -563,7 +622,7 @@ export default function DailyPage() {
     try { (safePlay as any)(best.key); } catch {}
   }, [safePlay]);
 
-  const TOTAL_SCORE_SFX: Array<{ threshold: number; key: string }> = [
+  const TOTAL_SCORE_SFX: Array<{ threshold: number; key: string } > = [
     { threshold: 5_000,  key: "total_10k" },
     { threshold: 20_000, key: "total_50k" },
     { threshold: 50_000, key: "total_100k" },
@@ -607,6 +666,10 @@ export default function DailyPage() {
       return nx;
     });
 
+    // letter starts bookkeeping (for letter goals)
+    const startL = w[0].toLowerCase();
+    setLetterCounts(lc => ({ ...lc, [startL]: (lc[startL] || 0) + 1 }));
+
     // base score uses best category base (or normal)
     const catsArr = Array.from(cats);
     const base = catsArr.length
@@ -640,7 +703,7 @@ export default function DailyPage() {
     setLast(w);
   }, [getCategories, totalMult, vfx, safePlay, playSingleWordOneShot, playTotalMilestoneOnce, maxChain]);
 
-  /* ===== Helper word click (ANYTIME; bypass chain-letter rule) ===== */
+  /* ===== SAFE WORD click (ANYTIME; bypass chain-letter rule) ===== */
   const tryUseHiddenWord = useCallback(async (w: string) => {
     const wl = w.toLowerCase();
     if (usedHidden.has(wl)) return;
@@ -660,7 +723,7 @@ export default function DailyPage() {
       return;
     }
 
-    // Accept and award hidden-word bonus (no chain constraints)
+    // Accept and award bonus (no chain constraints)
     applyAcceptedWord(w);
     setUsedHidden(prev => new Set(prev).add(wl));
     setScore(prev => {
@@ -668,23 +731,18 @@ export default function DailyPage() {
       playTotalMilestoneOnce(sum);
       return sum;
     });
-    setMsg(`+${HIDDEN_WORD_BONUS.toLocaleString()} hidden word bonus!`);
+    setMsg(`+${HIDDEN_WORD_BONUS.toLocaleString()} SAFE WORD bonus!`);
     try { safePlay("coin"); } catch {}
     try { vfx.confettiBurst({ power: 0.8 }); } catch {}
   }, [usedHidden, validateWord, allowedCats.size, allowedCatsList, applyAcceptedWord, vfx, safePlay, playTotalMilestoneOnce]);
 
   /* ===== Goals progress ===== */
   const goalState = useMemo(() => {
-    if (!spec) return [];
-    return spec.goals.map((g) => {
+    const goals = clientGoals;
+    return goals.map((g) => {
       let current = 0, target = 1, label = "", met = false;
 
-      if (g.kind === "score") {
-        current = score;
-        target = Math.max(1, g.target);
-        label = `Score ≥ ${target.toLocaleString()}`;
-        met = score >= target;
-      } else if (g.kind === "category") {
+      if (g.kind === "category") {
         current = catsCount[g.cat as ChainKey] ?? 0;
         target = g.count;
         label = `${safeLabelForCat(g.cat)} ≥ ${g.count}`;
@@ -692,12 +750,18 @@ export default function DailyPage() {
       } else if (g.kind === "trick") {
         if (g.trick === "sameEnds") { current = sameEnds; target = g.count; label = `Same-Ends ≥ ${g.count}`; met = current >= target; }
         else { current = maxChain; target = g.count; label = `Chain Length ≥ ${g.count}`; met = current >= target; }
+      } else if (g.kind === "letter") {
+        const L = (g.letter || "").toLowerCase();
+        current = letterCounts[L] || 0;
+        target = Math.max(1, g.count || 1);
+        label = `Start with “${(g.letter || "").toUpperCase()}” ≥ ${target}`;
+        met = current >= target;
       }
 
       const pct = Math.max(0, Math.min(100, Math.floor((current / target) * 100)));
       return { label, current, target, pct, met };
     });
-  }, [spec, score, catsCount, sameEnds, maxChain]);
+  }, [clientGoals, catsCount, sameEnds, maxChain, letterCounts]);
 
   const allGoalsMet = goalState.length > 0 && goalState.every(g => g.met);
 
@@ -707,13 +771,12 @@ export default function DailyPage() {
     if (!started || !allGoalsMet || didEndOnGoalsRef.current) return;
     didEndOnGoalsRef.current = true;
     endRun("All goals completed!");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allGoalsMet, started]);
+  }, [allGoalsMet, started]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Play tiny "goal completed" effect once per flip
+  // Tiny "goal completed" effect once per flip
   const prevMetRef = useRef<boolean[]>([]);
   useEffect(() => {
-    if (!started || !spec) return;
+    if (!started || clientGoals.length === 0) return;
     const nowMet = goalState.map(g => g.met);
     const prev = prevMetRef.current;
     for (let i = 0; i < nowMet.length; i++) {
@@ -723,7 +786,7 @@ export default function DailyPage() {
       }
     }
     prevMetRef.current = nowMet;
-  }, [goalState, started, spec, safePlay, vfx]);
+  }, [goalState, started, clientGoals.length, safePlay, vfx]);
 
   /* ===== Submit + streak helpers ===== */
   const updateLocalStreak = (completedId?: string) => {
@@ -754,7 +817,7 @@ export default function DailyPage() {
     }
   }
 
-  const submitDaily = useCallback(async (endReason?: string) => {
+  const submitDaily = useCallback(async (reason?: string) => {
     if (!spec) return;
     try {
       const res = await fetch("/api/daily/submit", {
@@ -762,7 +825,7 @@ export default function DailyPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           id: spec.id,
-          score,
+          score, // recorded for fun/leaderboards, NOT a goal
           wordsPlayed: recent.slice().reverse(),
           catsCount,
           sameEnds,
@@ -776,7 +839,7 @@ export default function DailyPage() {
       if (!res.ok || !j?.ok) {
         setMsg(j?.message || "Submit failed.");
       } else {
-        setMsg(j.fullClear ? "Daily cleared! 🎉" : (endReason || "Submitted."));
+        setMsg(j.fullClear ? "Daily cleared! 🎉" : (reason || "Submitted."));
         if (j.fullClear || allGoalsMet) {
           try { safePlay("mission"); } catch {}
           try { vfx.confettiBurst({ power: 1.2 }); } catch {}
@@ -792,7 +855,7 @@ export default function DailyPage() {
       if (spec?.id && allGoalsMet) pingPuzzleCompleteOnce(spec.id);
     } finally {
       setShowStats(true);
-      setEndReason(endReason || "");
+      setEndReason(reason || "");
     }
   }, [spec, score, catsCount, sameEnds, maxChain, recent, serverStartedAt, safePlay, vfx, allGoalsMet]);
 
@@ -802,6 +865,7 @@ export default function DailyPage() {
     try { safePlay("gameover"); } catch {}
     submitDaily(reason);
   }, [submitDaily, stop, safePlay]);
+
   /* ===== Form submit (typed words; enforces chain rule) ===== */
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -852,7 +916,7 @@ export default function DailyPage() {
     // Accept typed word
     applyAcceptedWord(w);
 
-    // If the typed word is also a helper, add the bonus
+    // If the typed word is also a SAFE WORD, add the bonus
     if (hiddenWordsFiltered.some(hw => hw.toLowerCase() === wl) && !usedHidden.has(wl)) {
       setUsedHidden(prev => new Set(prev).add(wl));
       setScore(prev => {
@@ -860,7 +924,7 @@ export default function DailyPage() {
         playTotalMilestoneOnce(sum);
         return sum;
       });
-      setMsg(`+${HIDDEN_WORD_BONUS.toLocaleString()} hidden word bonus!`);
+      setMsg(`+${HIDDEN_WORD_BONUS.toLocaleString()} SAFE WORD bonus!`);
       try { safePlay("coin"); } catch {}
       try { vfx.confettiBurst({ power: 0.8 }); } catch {}
     }
@@ -960,7 +1024,7 @@ export default function DailyPage() {
 
               <div className="space-y-2">
                 <h3 className="font-semibold text-sm">Today’s Goals</h3>
-                <GoalGrid goals={spec.goals} state={goalState} />
+                <GoalGrid goals={clientGoals} state={goalState} />
               </div>
 
               {showRestrictionHint && (
@@ -969,40 +1033,10 @@ export default function DailyPage() {
                 </div>
               )}
 
-              {/* Helper words preview (category-colored, bracketed labels) */}
-              {hiddenWordsFiltered.length > 0 && (
-                <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-amber-50 dark:bg-amber-950/20 px-3 py-2">
-                  <div className="mb-1 font-semibold">Helper Words (click during game)</div>
-                  <div className="flex flex-wrap gap-1">
-                    {hiddenWordsFiltered.map((w) => {
-                      const cats = Array.from(getCategories(w));
-                      const c = cats[0] as ChainKey | undefined;
-                      const color = c ? CHAIN_COLORS[c] : CHAIN_COLORS.main;
-                      const usedUp = usedHidden.has(w.toLowerCase());
-                      return (
-                        <span
-                          key={w}
-                          className={[
-                            "px-2 py-0.5 rounded-full border text-xs",
-                            color.badge, color.text,
-                            usedUp ? "opacity-50 line-through" : "bg-white dark:bg-gray-900"
-                          ].join(" ")}
-                          title={c ? CHAIN_COLORS[c].label : "General"}
-                        >
-                          {w} <span className="text-[10px] text-gray-600 dark:text-gray-400">({safeLabelForCat(c)})</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-1 text-amber-900 dark:text-amber-200">
-                    Use anytime for +{HIDDEN_WORD_BONUS.toLocaleString()} and it counts toward that category.
-                  </div>
-                </div>
-              )}
-
+              {/* NOTE: SAFE WORDS PREVIEW REMOVED FROM START SCREEN */}
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 Rules: Next word must start with the previous last letter and include the previous first letter somewhere.
-                (Helper buttons ignore this rule.)
+                (SAFE WORD buttons ignore this rule during play.)
               </div>
 
               {!isSignedIn && (
@@ -1021,7 +1055,8 @@ export default function DailyPage() {
                   <span className="text-xs text-gray-600 dark:text-gray-400">Come back tomorrow 👋</span>
                 )}
               </div>
-              <div className="min-h-5 text-rose-600 dark:text-rose-400">{msg}</div>
+              {/* Message area: light stays rose, dark switches to emerald */}
+              <div className="min-h-5 text-rose-600 dark:text-emerald-300">{msg}</div>
             </div>
           )}
 
@@ -1045,7 +1080,7 @@ export default function DailyPage() {
                 <div className="text-sm text-gray-600 dark:text-gray-400">Time Left: {timeLeft}s</div>
 
                 {/* Goals row */}
-                <GoalGrid goals={spec.goals} state={goalState} />
+                <GoalGrid goals={clientGoals} state={goalState} />
 
                 {/* Restriction hint */}
                 {showRestrictionHint && (
@@ -1059,7 +1094,7 @@ export default function DailyPage() {
                   Last word: <b className="break-words">{last === "start" ? spec.starter : last}</b>
                 </div>
 
-                {/* Input */}
+                {/* Input (explicit high-contrast dark styles) */}
                 <form onSubmit={onSubmit} className="mt-2 flex gap-2">
                   <input
                     ref={inputRef}
@@ -1069,14 +1104,21 @@ export default function DailyPage() {
                           ? `Start anywhere (starter: “${spec.starter}”) · Only ${allowedCatsList}`
                           : `Start anywhere (starter: “${spec.starter}”)`)
                       : `Must start “${lastLetter(last).toLowerCase()}” & include “${firstLetter(last).toLowerCase()}”${showRestrictionHint ? ` · Only ${allowedCatsList}` : ""}`}
-                    className="input flex-1 rounded-xl border p-3"
+                    className="flex-1 rounded-xl border px-3 py-3
+                               bg-white text-gray-900 placeholder-gray-500 border-gray-300
+                               focus:outline-none focus:ring-2 focus:ring-black focus:border-black
+                               dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-700
+                               dark:focus:ring-white dark:focus:border-gray-500"
                     autoFocus
                     onKeyDown={onTypeKey}
+                    autoComplete="off"
+                    spellCheck={false}
                   />
                   <button className="btn btn-primary">Submit</button>
                 </form>
 
-                <div className="min-h-6 text-rose-600 dark:text-rose-400">{msg}</div>
+                {/* Message area: light stays rose, dark turns emerald */}
+                <div className="min-h-6 text-rose-600 dark:text-emerald-300">{msg}</div>
 
                 {/* Recent */}
                 <div>
@@ -1112,11 +1154,11 @@ export default function DailyPage() {
                 </div>
               </div>
 
-              {/* Right column: helper words */}
+              {/* Right column: SAFE WORD buttons (only during play) */}
               <div className="card p-4 space-y-3">
                 {remainingHidden.length > 0 && (
                   <div>
-                    <div className="mb-1 text-sm font-semibold">Helper Words (+{HIDDEN_WORD_BONUS.toLocaleString()} each)</div>
+                    <div className="mb-1 text-sm font-semibold">SAFE WORDS (+{HIDDEN_WORD_BONUS.toLocaleString()} each)</div>
                     <div className="flex flex-col gap-2">
                       {remainingHidden.map((w) => {
                         const cats = Array.from(getCategories(w));
@@ -1130,12 +1172,11 @@ export default function DailyPage() {
                               color.border
                             ].join(" ")}
                             onClick={() => tryUseHiddenWord(w)}
-                            title="Auto-play now (ignores chain-letter rule)"
+                            title={`Use SAFE WORD (${safeLabelForCat(c)}) now`}
+                            aria-label={`Use SAFE WORD for ${safeLabelForCat(c)}`}
                           >
-                            <span className={`font-medium ${color.text}`}>
-                              {w} <span className="text-xs text-gray-600 dark:text-gray-400">({safeLabelForCat(c)})</span>
-                            </span>
-                            <span className="ml-2 text-xs text-amber-700 dark:text-amber-300">Use →</span>
+                            <span className="font-semibold">SAFE WORD</span>
+                            <span className={`ml-2 text-xs ${color.text}`}>({safeLabelForCat(c)})</span>
                           </button>
                         );
                       })}
@@ -1172,6 +1213,11 @@ export default function DailyPage() {
                 </div>
               </div>
 
+              <div>
+                <h3 className="font-semibold text-sm mb-2">Goals</h3>
+                <GoalGrid goals={clientGoals} state={goalState} />
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                   <div className="text-xs text-gray-500 dark:text-gray-400">Score</div>
@@ -1185,11 +1231,6 @@ export default function DailyPage() {
                   <div className="text-xs text-gray-500 dark:text-gray-400">Same-Ends</div>
                   <div className="text-2xl font-semibold">{sameEnds}</div>
                 </div>
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-sm mb-2">Goals</h3>
-                <GoalGrid goals={spec.goals} state={goalState} />
               </div>
 
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3 text-xs text-gray-700 dark:text-gray-300">
@@ -1223,19 +1264,18 @@ export default function DailyPage() {
         </>
       )}
 
-      {/* Local styles */}
+      {/* Local styles (keep existing utility classes) */}
       <style jsx global>{`
         .card { @apply rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-white/5 shadow-sm backdrop-blur; }
         .btn { @apply rounded-xl px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition; }
         .btn-primary { @apply border-black bg-black text-white hover:bg-black/90; }
         .btn-ghost { @apply border-transparent bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800; }
-        .input { @apply bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700; }
       `}</style>
     </div>
   );
 }
 
-/* ===== Goals grid (uses safeLabelForCat; no letters-goal) ===== */
+/* ===== Goals grid (fixed progress shading; supports category + trick + letter) ===== */
 function GoalGrid({
   goals,
   state,
@@ -1248,33 +1288,44 @@ function GoalGrid({
       {goals.map((g, i) => {
         const s = state[i];
         if (!s) return null;
-        const met = s.met;
+
+        const isLetter = (g as any).kind === "letter";
+        const badge =
+          g.kind === "category"
+            ? CHAIN_COLORS[(g as any).cat as ChainKey]
+            : CHAIN_COLORS.main;
+
         return (
           <div
             key={i}
             className={[
               "relative rounded-lg border p-2 text-sm overflow-hidden",
-              met
+              s.met
                 ? "border-emerald-400 dark:border-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 opacity-90"
                 : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
             ].join(" ")}
           >
-            {/* Fill layer showing progress */}
+            {/* Single progress fill (no competing sheen) */}
             <div
-              className={`absolute inset-y-0 left-0 transition-all duration-300 ${met ? "bg-emerald-200/60 dark:bg-emerald-700/30" : "bg-gray-200/60 dark:bg-gray-700/30"}`}
+              className={`absolute inset-y-0 left-0 transition-all duration-300 ${s.met ? "bg-emerald-200/60 dark:bg-emerald-700/30" : "bg-gray-200/60 dark:bg-gray-700/30"}`}
               style={{ width: `${s.pct}%` }}
-              aria-hidden
-            />
-            {/* Leading sheen */}
-            <div
-              className="absolute inset-y-0 left-0 w-4 bg-white/20 dark:bg-white/10 pointer-events-none transition-transform duration-300"
-              style={{ transform: `translateX(${s.pct}%)` }}
               aria-hidden
             />
             {/* Content */}
             <div className="relative z-10 flex items-center justify-between">
-              <span className="truncate">{s.label}</span>
-              <span className="ml-2">{met ? "🟩" : "⬜"}</span>
+              <span className="truncate">
+                {isLetter ? (
+                  <>
+                    <span className={`px-1.5 py-0.5 rounded ${badge.badge} ${badge.text} mr-1`}>
+                      {(g as any).letter?.toUpperCase()}
+                    </span>
+                    {s.label}
+                  </>
+                ) : (
+                  s.label
+                )}
+              </span>
+              <span className="ml-2">{s.met ? "🟩" : "⬜"}</span>
             </div>
             <div className="relative z-10 mt-1 text-[11px] text-gray-700 dark:text-gray-300 tabular-nums">
               {Math.min(s.current, s.target)} / {s.target}

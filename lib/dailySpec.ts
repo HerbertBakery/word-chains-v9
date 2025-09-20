@@ -6,9 +6,9 @@ import { getTodayKey, toDailyKey, DAILY_TZ } from "@/lib/dailyKey";
 type ChainKey = "name" | "animal" | "country" | "food" | "brand" | "screen";
 
 type DailyGoal =
-  | { kind: "score"; target: number }
   | { kind: "category"; cat: ChainKey; count: number }
-  | { kind: "trick"; trick: "sameEnds" | "chain"; count: number };
+  | { kind: "trick"; trick: "sameEnds" | "chain"; count: number }
+  | { kind: "letter"; letter: string; count: number };
 
 type DailySpec = {
   id: string;           // e.g. "2025-09-15"
@@ -16,11 +16,11 @@ type DailySpec = {
   dateKey: string;      // same as id
   timeSeconds: number;  // per-day time
   starter: string;      // starter display word
-  goals: DailyGoal[];   // score + 4 categories + 1 trick
+  goals: DailyGoal[];   // EXACTLY 6: 4 categories + 1 letter(S) + 1 trick
   signature: string;    // sha256 of canonical payload + salt
 };
 
-/** PRNG + helpers */
+/* ============================ PRNG + helpers ============================ */
 function mulberry32(seed: number) {
   let t = seed >>> 0;
   return function () {
@@ -50,7 +50,22 @@ function shuffle<T>(rng: () => number, a: T[]) {
   return arr;
 }
 
-/** Build the daily spec */
+/* ============================ Letter goal (S only) ============================ */
+/** Deterministic target for "Starts with S" — inclusive range 5..9 */
+function sGoalCount(dateKey: string): number {
+  const rng = mulberry32(strHash(`wc_s_goal_${dateKey}`));
+  return 5 + Math.floor(rng() * 5); // 5..9
+}
+
+/* ============================ Spec builder ============================ */
+/**
+ * Deterministically generates today’s DailySpec:
+ * - Always EXACTLY 6 goals:
+ *    4 category goals + 1 letter goal (always S, 5–9) + 1 trick goal
+ * - Category goals define which categories are valid today.
+ * - No score-based goals.
+ * - Time varies gently by weekday.
+ */
 export async function getTodaySpec(inputDate?: Date): Promise<{
   dateKey: string;
   specId: string;
@@ -59,7 +74,7 @@ export async function getTodaySpec(inputDate?: Date): Promise<{
   const dateKey = inputDate ? toDailyKey(inputDate, DAILY_TZ) : getTodayKey();
   const rng = mulberry32(strHash(dateKey));
 
-  // Starters (UI flavor only)
+  // Starters (kept simple so they pass the client input regex & play nicely)
   const starters = [
     "orbit","silk","ember","quartz","pixel","harbor","magnet","prism","velvet",
     "anchor","thunder","prayer","nectar","rocket","dynamo","riddle","violet","hazel","juniper",
@@ -83,29 +98,35 @@ export async function getTodaySpec(inputDate?: Date): Promise<{
     if (isValidCat(c) && !chosenCats.includes(c)) chosenCats.push(c);
     if (chosenCats.length === 4) break;
   }
+  // Fill to 4 distinct categories if biasPool somehow ran short (shouldn’t)
   for (const c of VALID_CATS) {
     if (chosenCats.length === 4) break;
     if (!chosenCats.includes(c)) chosenCats.push(c);
   }
 
   /** ===== Rhythm & targets ===== */
-  const dow = new Date(dateKey + "T00:00:00").getDay(); // 0..6 (Sun..Sat)
+  // Use UTC day-of-week for the date-only key (stable across TZs for that date)
+  const dow = new Date(dateKey).getUTCDay(); // 0..6 (Sun..Sat)
 
-  // Category counts baseline (gentle) + tiny ramp by index
+  // Category counts baseline (gentle) + tiny ramp by index among the four
   const baseCount = [3,4,4,5,5,6,6][dow];
 
-  // >>> Raised: score targets are now ALL >= 20,000 <<<
-  // (helpers can add ~15k total, so this keeps the goal meaningful)
-  const scoreTargets = [20000, 21000, 22000, 23000, 24000, 26000, 28000];
-
-  /** ===== Goals: score + 4 categories + 1 trick ===== */
+  /** ===== Goals: EXACTLY 6 ===== */
+  // 4 categories
   const categoryGoals: DailyGoal[] = chosenCats.slice(0, 4).map((cat, i) => {
     let count = baseCount + Math.max(0, i - 1); // tiny ramp across the four
     if (cat === "brand") count = Math.max(2, baseCount - 1); // brands are harder; soften
     return { kind: "category", cat, count };
   });
 
-  // One trick: same-ends or chain length
+  // 1 letter goal: always Starts with S, target 5–9 (deterministic)
+  const letterGoal: DailyGoal = {
+    kind: "letter",
+    letter: "s",
+    count: sGoalCount(dateKey),
+  };
+
+  // 1 trick: same-ends or chain length
   const trickGoal: DailyGoal =
     rng() < 0.5
       ? { kind: "trick", trick: "sameEnds", count: Math.min(6, 2 + Math.floor(rng() * 4)) } // 2–6
@@ -114,10 +135,11 @@ export async function getTodaySpec(inputDate?: Date): Promise<{
   // Slight time variance by day
   const timeSeconds = [120, 120, 120, 130, 140, 150, 150][dow];
 
+  // Final 6 goals
   const goals: DailyGoal[] = [
-    { kind: "score", target: scoreTargets[dow] },
-    ...categoryGoals,
-    trickGoal,
+    ...categoryGoals, // 4
+    letterGoal,       // +1
+    trickGoal,        // +1  => 6 total
   ];
 
   /** ===== Final spec + signature ===== */
