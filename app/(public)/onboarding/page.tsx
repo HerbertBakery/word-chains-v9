@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { normalizeUsername, validateUsername, USERNAME_MIN, USERNAME_MAX } from "@/lib/username";
 
 export default function OnboardingPage() {
-  const { data, status } = useSession();
-  const user = data?.user as any;
+  const { data, status, update } = useSession(); // added `update`
+  const user = (data?.user as any);
   const router = useRouter();
 
   const [raw, setRaw] = React.useState("");
@@ -50,6 +50,10 @@ export default function OnboardingPage() {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
+
+      // NEW: instantly sync session so Header reflects the new username without a reload
+      await update({ username });
+
       router.push("/leaderboard");
     } catch (err: any) {
       setError(err.message || "Failed to save username.");
@@ -73,7 +77,15 @@ export default function OnboardingPage() {
           onChange={(e) => setRaw(e.target.value.toLowerCase())}
           placeholder="e.g. herbert.saurus"
           maxLength={USERNAME_MAX}
-          className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+          autoComplete="username"
+          className="
+            w-full rounded-xl px-3 py-2 text-sm
+            border border-neutral-300 bg-white text-neutral-900 placeholder-neutral-400
+            focus:outline-none focus:ring-2 focus:ring-neutral-500
+
+            dark:bg-neutral-800 dark:text-neutral-100 dark:placeholder-neutral-400 dark:border-neutral-700
+            dark:focus:ring-neutral-300
+          "
           aria-describedby="username-rules"
           required
         />
