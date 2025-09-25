@@ -1,16 +1,16 @@
-// app/api/streaks/ping-complete/route.ts
+// app/api/streaks/ping-played/route.ts
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { safeGetServerSession } from "@/lib/session";
-import { pingCompletedDailyPuzzle } from "@/lib/streaks";
+import { pingPlayedAnyMode } from "@/lib/streaks";
 
 export async function POST() {
   const session = await safeGetServerSession();
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const stats = await pingCompletedDailyPuzzle(userId);
+  const stats = await pingPlayedAnyMode(userId);
   return NextResponse.json({ ok: true, stats }, {
     headers: { "cache-control": "no-store, max-age=0" },
   });

@@ -1,4 +1,3 @@
-// app/api/daily/leaderboard/route.ts
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -53,65 +52,71 @@ export async function GET(req: Request) {
     const dateKey = dateParam && DATE_RE.test(dateParam) ? dateParam : todayKey;
 
     // Helpers
-    const safeFindMany = async <T,>(fn: () => Promise<T>, tag: string): Promise<T | null> => {
+    const safe = async <T,>(fn: () => Promise<T>, tag: string): Promise<T | null> => {
       try { return await fn(); }
       catch (e: any) { log(`${tag} prisma error`, { message: e?.message, code: e?.code, meta: e?.meta }); return null; }
     };
 
-    // ----- TOP FOR DAY (SIGNED-IN USERS ONLY) -----
+    // ----- TOP FOR DAY (SIGNED-IN USERS ONLY) — by fastest time -----
     const dayRows =
-      (await safeFindMany(
+      (await safe(
         () =>
           prisma.dailyRun.findMany({
-            where: { dateKey, NOT: { userId: null } }, // exclude guests
-            orderBy: [{ score: "desc" }, { createdAt: "asc" }],
+            where: {
+              dateKey,
+              completedAll: true,
+              NOT: { userId: null },
+              // Only rows that actually recorded time
+              timeTakenSec: { not: null },
+            },
+            orderBy: [{ timeTakenSec: "asc" }, { createdAt: "asc" }],
             take: limit,
             skip: offset,
             select: {
               id: true,
               userId: true,
-              score: true,
+              timeTakenSec: true,
               createdAt: true,
               specId: true,
               dateKey: true,
-              sameEnds: true,
-              maxChain: true,
               completedAll: true,
             },
           }),
         "findMany(dayRows)"
       )) ?? [];
 
-    // ----- ALL-TIME TOP (SIGNED-IN ONLY) -----
+    // ----- ALL-TIME FASTEST (SIGNED-IN ONLY) -----
     const allTimeRows =
-      (await safeFindMany(
+      (await safe(
         () =>
           prisma.dailyRun.findMany({
-            where: { NOT: { userId: null } }, // exclude guests
-            orderBy: [{ score: "desc" }, { createdAt: "asc" }],
+            where: {
+              completedAll: true,
+              NOT: { userId: null },
+              timeTakenSec: { not: null },
+            },
+            orderBy: [{ timeTakenSec: "asc" }, { createdAt: "asc" }],
             take: limit,
             select: {
               id: true,
               userId: true,
-              score: true,
+              timeTakenSec: true,
               createdAt: true,
               specId: true,
               dateKey: true,
-              sameEnds: true,
-              maxChain: true,
               completedAll: true,
             },
           }),
         "findMany(allTimeRows)"
       )) ?? [];
 
-    const highestScoreToday = dayRows[0]?.score ?? 0;
-    const highestScoreAllTime = allTimeRows[0]?.score ?? 0;
+    const fastestToday = dayRows[0]?.timeTakenSec ?? null;
+    const fastestAllTime = allTimeRows[0]?.timeTakenSec ?? null;
 
     // Hydrate users
     const userIds = Array.from(new Set([...dayRows, ...allTimeRows].map(r => r.userId).filter(Boolean))) as string[];
     const users =
-      (await safeFindMany(
+      (await safe(
         () =>
           prisma.user.findMany({
             where: { id: { in: userIds } },
@@ -124,28 +129,26 @@ export async function GET(req: Request) {
     const topForDay = dayRows.map((r) => ({ ...r, user: r.userId ? userMap.get(r.userId) ?? null : null }));
     const topAllTime = allTimeRows.map((r) => ({ ...r, user: r.userId ? userMap.get(r.userId) ?? null : null }));
 
-    // Your rank for the requested day (if logged in)
+    // Your rank for the requested day (if logged in) — by time
     let yourRankToday: number | null = null;
     if (userId) {
-      const you = await safeFindMany(
+      const you = await safe(
         () =>
           prisma.dailyRun.findFirst({
-            where: { dateKey, userId },
-            select: { score: true, createdAt: true },
+            where: { dateKey, userId, completedAll: true, timeTakenSec: { not: null } },
+            select: { timeTakenSec: true, createdAt: true },
           }),
         "findFirst(you)"
       );
-      if (you) {
-        const better = await safeFindMany(
+      if (you && typeof you.timeTakenSec === "number") {
+        const better = await safe(
           () =>
             prisma.dailyRun.count({
               where: {
                 dateKey,
-                NOT: { userId: null }, // only signed-in pool
-                OR: [
-                  { score: { gt: you.score } },
-                  { score: you.score, createdAt: { lt: you.createdAt } },
-                ],
+                completedAll: true,
+                NOT: { userId: null },
+                timeTakenSec: { not: null, lt: you.timeTakenSec as number },
               },
             }),
           "count(better)"
@@ -157,7 +160,7 @@ export async function GET(req: Request) {
     // Your streak (if logged in)
     let streak: { current: number; best: number } | null = null;
     if (userId) {
-      const s = await safeFindMany(
+      const s = await safe(
         () =>
           prisma.dailyStreak.findUnique({
             where: { userId },
@@ -168,17 +171,32 @@ export async function GET(req: Request) {
       if (s) streak = s;
     }
 
+    // Back-compat for current UI: provide `runs` (today-only).
+    // NOTE: we set `score` to seconds for now; the page will be updated next to show "Time (s)" with 2 dp.
+    const runs = topForDay.map((r) => ({
+      id: r.id,
+      // Will be replaced on the UI step; for now, "score" carries seconds so the list isn't empty.
+      score: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : 0,
+      completedAll: true,
+      userId: r.userId,
+      createdAt: r.createdAt as unknown as string,
+      user: r.user ? { name: r.user.name, username: r.user.username, image: r.user.image } : undefined,
+      // Extra fields the new UI will use:
+      timeTakenSec: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : null,
+    }));
+
     return NextResponse.json({
       ok: true,
       dateKey,
       todayKey,
       todaySpecId,
-      highestScoreToday,
-      highestScoreAllTime,
+      fastestToday,
+      fastestAllTime,
       yourRankToday,
       streak,
       topForDay,
       topAllTime,
+      runs,      // <- current page reads this
       limit,
       offset,
     });

@@ -1,11 +1,17 @@
+// app/api/streaks/me/route.ts
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextResponse } from "next/server";
-import { safeGetServerSession } from "../../../../lib/session";
-import { getMyStreaks } from "../../../../lib/streaks";
+import { safeGetServerSession } from "@/lib/session";
+import { getMyStreaks } from "@/lib/streaks";
 
 export async function GET() {
   const session = await safeGetServerSession();
   const userId = (session as any)?.user?.id as string | undefined;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const data = await getMyStreaks(userId);
-  return NextResponse.json(data);
+  return NextResponse.json(data, {
+    headers: { "cache-control": "no-store, max-age=0" },
+  });
 }

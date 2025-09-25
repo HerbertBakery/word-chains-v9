@@ -1,13 +1,13 @@
-// app/leaderboard/page.tsx
+// app/(public)/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import ChainLeaderboard from "@/app/play/chain/ChainLeaderboard";
 
-/* ===================== Shared types for Daily tab ===================== */
+/* ===================== Shared types for Daily tab (SPEED) ===================== */
 type DailyRow = {
   id: string;
-  score: number;
+  timeTakenSec: number; // NEW — authoritative, two-decimal seconds from API
   dateKey?: string;
   createdAt: string;
   user?: { id: string; name: string | null; username: string | null; image: string | null };
@@ -15,16 +15,22 @@ type DailyRow = {
 
 type DailyPayload = {
   ok: true;
+  mode: "speed";
   dateKey: string;
   todayKey: string;
   todaySpecId: string;
-  highestScoreToday: number;
-  highestScoreAllTime: number;
+  bestToday: number | null;    // fastest time for selected day
+  bestAllTime: number | null;  // fastest time across all days
   yourRankToday: number | null;
   streak: { current: number; best: number } | null;
   topForDay: DailyRow[];
   topAllTime: DailyRow[];
+  limit: number;
+  offset: number;
 };
+
+/* Utilities */
+const fmtTime = (s?: number | null) => (typeof s === "number" && isFinite(s) ? `${s.toFixed(2)}s` : "—");
 
 /* ===================== Page with tabs ===================== */
 export default function LeaderboardTabsPage() {
@@ -55,7 +61,6 @@ export default function LeaderboardTabsPage() {
             }`}
             onClick={() => setTab("daily")}
           >
-            {/* Label only changed from Daily -> Puzzle */}
             Puzzle
           </button>
           <button
@@ -203,7 +208,7 @@ function MainLeaderboard() {
                 rows.map((r, idx) => (
                   <tr
                     key={r.userId}
-                    className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-white/5"
+                    className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg:white/5"
                     onClick={() => goTo(r)}
                   >
                     <td className="p-3">{idx + 1}</td>
@@ -362,9 +367,9 @@ function DailyLeaderboard() {
       <div className="rounded-2xl border border-neutral-200 bg-white/70 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end justify-between">
           <div>
-            <h2 className="text-xl font-semibold">Daily · {data.dateKey}</h2>
+            <h2 className="text-xl font-semibold">Daily Speed · {data.dateKey}</h2>
             <div className="text-sm text-neutral-600 dark:text-neutral-300">
-              Highest Today: <b>{data.highestScoreToday}</b> · Highest (All Daily): <b>{data.highestScoreAllTime}</b>
+              Fastest Today: <b>{fmtTime(data.bestToday)}</b> · Fastest (All Daily): <b>{fmtTime(data.bestAllTime)}</b>
             </div>
             {data.streak && (
               <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
@@ -388,8 +393,8 @@ function DailyLeaderboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <DailyBoard title="Top Today" rows={data.topForDay} />
-        <DailyBoard title="All-Time Daily" rows={data.topAllTime} showDate />
+        <DailyBoard title="Top Today (Fastest)" rows={data.topForDay} />
+        <DailyBoard title="All-Time Daily (Fastest)" rows={data.topAllTime} showDate />
       </div>
     </div>
   );
@@ -410,7 +415,7 @@ function DailyBoard({ title, rows, showDate = false }: { title: string; rows: Da
               </div>
               {showDate && r.dateKey && <span className="text-xs text-neutral-500 dark:text-neutral-400">· {r.dateKey}</span>}
             </div>
-            <span className="font-semibold tabular-nums">{r.score}</span>
+            <span className="font-semibold tabular-nums">{fmtTime(r.timeTakenSec)}</span>
           </li>
         ))}
         {rows.length === 0 && <li className="p-4 text-sm text-neutral-500 dark:text-neutral-400">No entries yet.</li>}

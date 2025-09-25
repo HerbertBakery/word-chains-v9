@@ -1,28 +1,20 @@
 // lib/streaks.ts
 import { prisma } from "./prisma";
+import { DAILY_TZ, toDailyKey, getTodayKey } from "./dailyKey";
 
-/** Toronto-local ISO date (YYYY-MM-DD) */
-function torontoISODate(d = new Date()) {
-  try {
-    const fmt = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Toronto",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const parts = fmt.formatToParts(d);
-    const y = parts.find((p) => p.type === "year")?.value ?? "2000";
-    const m = parts.find((p) => p.type === "month")?.value ?? "01";
-    const day = parts.find((p) => p.type === "day")?.value ?? "01";
-    return `${y}-${m}-${day}`;
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function tzKey(d: Date = new Date()): string {
+  return toDailyKey(d, DAILY_TZ);
 }
 
-function isSameTorontoDay(a?: Date | null, b?: Date | null) {
-  if (!a || !b) return false;
-  return torontoISODate(a) === torontoISODate(b);
+function yesterdayTzKey(): string {
+  return toDailyKey(new Date(Date.now() - ONE_DAY_MS), DAILY_TZ);
+}
+
+function isSameTzDay(a?: Date | null, b: Date = new Date()) {
+  if (!a) return false;
+  return tzKey(a) === tzKey(b);
 }
 
 async function ensurePlayerStats(userId: string) {
@@ -31,50 +23,46 @@ async function ensurePlayerStats(userId: string) {
   return prisma.playerStats.create({ data: { userId } });
 }
 
-/** Daily Streak: play any mode once per Toronto day */
+/** Daily Streak: play ANY mode once per DAILY_TZ day */
 export async function pingPlayedAnyMode(userId: string) {
-  const today = new Date();
   const stats = await ensurePlayerStats(userId);
 
-  if (isSameTorontoDay(stats.lastPlayedAt, today)) return stats;
+  // Already counted today?
+  if (isSameTzDay(stats.lastPlayedAt)) return stats;
 
-  let nextDaily = 1;
-  if (stats.lastPlayedAt) {
-    const yesterdayKey = torontoISODate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const lastKey = torontoISODate(stats.lastPlayedAt);
-    nextDaily = lastKey === yesterdayKey ? (stats.dailyStreak ?? 0) + 1 : 1;
-  }
+  const todayKey = getTodayKey(); // DAILY_TZ
+  const lastKey = stats.lastPlayedAt ? tzKey(stats.lastPlayedAt) : null;
+  const nextDaily =
+    lastKey === yesterdayTzKey() ? (stats.dailyStreak ?? 0) + 1 : 1;
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.streakEvent.create({ data: { userId, kind: "PLAYED_ANY_MODE" } });
     return tx.playerStats.update({
       where: { userId },
-      data: { dailyStreak: nextDaily, lastPlayedAt: today },
+      data: { dailyStreak: nextDaily, lastPlayedAt: new Date() },
     });
   });
 
   return updated;
 }
 
-/** Puzzle Streak: complete the Daily Puzzle this Toronto day */
+/** Puzzle Streak: complete the Daily Puzzle this DAILY_TZ day */
 export async function pingCompletedDailyPuzzle(userId: string) {
-  const today = new Date();
   const stats = await ensurePlayerStats(userId);
 
-  if (isSameTorontoDay(stats.lastCompletedAt, today)) return stats;
+  if (isSameTzDay(stats.lastCompletedAt)) return stats;
 
-  let nextPuzzle = 1;
-  if (stats.lastCompletedAt) {
-    const yesterdayKey = torontoISODate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const lastKey = torontoISODate(stats.lastCompletedAt);
-    nextPuzzle = lastKey === yesterdayKey ? (stats.puzzleStreak ?? 0) + 1 : 1;
-  }
+  const lastKey = stats.lastCompletedAt ? tzKey(stats.lastCompletedAt) : null;
+  const nextPuzzle =
+    lastKey === yesterdayTzKey() ? (stats.puzzleStreak ?? 0) + 1 : 1;
 
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.streakEvent.create({ data: { userId, kind: "COMPLETED_DAILY_PUZZLE" } });
+    await tx.streakEvent.create({
+      data: { userId, kind: "COMPLETED_DAILY_PUZZLE" },
+    });
     return tx.playerStats.update({
       where: { userId },
-      data: { puzzleStreak: nextPuzzle, lastCompletedAt: today },
+      data: { puzzleStreak: nextPuzzle, lastCompletedAt: new Date() },
     });
   });
 

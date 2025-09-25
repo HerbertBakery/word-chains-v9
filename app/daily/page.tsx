@@ -1,8 +1,10 @@
-// app/play/daily/page.tsx
+// app/daily/page.tsx — PART A
+
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 
 /* ===== Local types (decouple from external to avoid import churn) ===== */
@@ -33,7 +35,7 @@ import { LoadingBar } from "@/app/components/LoadingBar";
 const HIDDEN_WORD_BONUS = 1500;
 
 /* ===== Input + normalization helpers (mirrors main game) ===== */
-const INPUT_RE = /^[a-zA-Z][a-zA-Z\s'\-&.]*$/;
+const INPUT_RE = /^[a-zA-Z][a-zA-Z\s'\-&.]*$/; // digits not allowed for typed input already
 const stripDiacritics = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "");
 const norm = (s: string) =>
   stripDiacritics(s)
@@ -55,6 +57,7 @@ const stripCorpSuffixes = (s: string) =>
 const lastLetter = (w: string) => w[w.length - 1];
 const firstLetter = (w: string) => w[0];
 const fmt = (x: number) => `x${x.toFixed(2)}`;
+const noDigits = (w: string) => !/\d/.test(w);
 
 /* ===== Types local to page ===== */
 type Datasets = {
@@ -73,8 +76,6 @@ type Datasets = {
   screens: Set<string>;
   screensNorm: Set<string>;
 };
-
-type StreakInfo = { current: number; best?: number; todayPlayed?: boolean };
 
 /* ===== Scoring weights (unchanged, still used for points—not goals) ===== */
 const CHAIN_BASE: Record<"normal" | ChainKey, number> = {
@@ -100,7 +101,7 @@ const CHAIN_COLORS: Record<
   screen: { badge: "bg-teal-100 dark:bg-teal-800",   border: "border-teal-400 dark:border-teal-600",   text: "text-teal-900 dark:text-teal-100",   label: "TV/Movies", solid: "bg-teal-100 dark:bg-teal-900" },
 };
 
-/* ===== New: Defensive label helper so category tiles never render blank ===== */
+/* ===== Defensive label helper so category tiles never render blank ===== */
 const safeLabelForCat = (cat: ChainKey | any) =>
   CHAIN_COLORS[cat as ChainKey]?.label ?? "General";
 
@@ -108,8 +109,6 @@ const safeLabelForCat = (cat: ChainKey | any) =>
 const LS = {
   keyPlayed: (id: string) => `wc_daily_played_${id}`,
   keyLastId: `wc_daily_last_id`,
-  keyStreak: `wc_daily_streak_current`,
-  keyBest: `wc_daily_streak_best`,
   keyPuzzlePing: (id: string) => `wc_puzzle_ping_complete_${id}`,
 };
 const safeLS = {
@@ -152,35 +151,49 @@ const pickFrom = <T,>(arr: T[], rnd: () => number) =>
 function sGoalCount(seedStr?: string): number {
   const seed = xmur3(`wc_s_goal_${seedStr || "default"}`)();
   const rnd = mulberry32(seed);
-  // inclusive int 5..9
-  return 5 + Math.floor(rnd() * 5);
+  return 5 + Math.floor(rnd() * 5); // 5..9
 }
 
-
-/** Keep at most 1 letter goal; override to a single S-goal (10–20); total 6 goals. */
+/** Keep at most 1 letter goal; override to a single S-goal; total 6 goals. */
 function normalizeGoals(src: DailyGoal[], seedStr?: string): DailyGoal[] {
   if (!Array.isArray(src)) return [];
-
-  // Build our S goal (override any letters from server)
   const sGoal: DailyGoal = { kind: "letter", letter: "s", count: sGoalCount(seedStr) };
-
-  // Filter out any existing letter goals from server—replace with just S
   const nonLetters = src.filter(g => g.kind !== "letter");
-
-  // Compose list with S-goal + non-letters truncated to 6 total (prefer 5 non-letter + 1 letter)
   const result: DailyGoal[] = [];
-  const maxNonLetter = 5; // leave room for our single S goal
+  const maxNonLetter = 5;
   for (const g of nonLetters) {
     if (result.length >= maxNonLetter) break;
     result.push(g);
   }
   result.push(sGoal);
-
   return result.slice(0, 6);
+}
+
+/* ===== Visually Obvious "Valid Words" Banner ===== */
+function ValidBanner({ text }: { text: string }) {
+  return (
+    <div
+      className="
+        relative overflow-hidden rounded-2xl border
+        px-4 py-3 text-center font-semibold tracking-wide
+        bg-emerald-100/80 border-emerald-300 text-emerald-900
+        dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-200
+        shadow-[inset_0_0_0_1px_rgba(0,0,0,0.02)]
+      "
+      aria-live="polite"
+      role="status"
+    >
+      <span className="inline-flex items-center justify-center gap-2">
+        <span className="text-lg">✅</span>
+        <span className="text-sm sm:text-base">{text}</span>
+      </span>
+    </div>
+  );
 }
 
 /* ===== Page component ===== */
 export default function DailyPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const isSignedIn = !!session?.user;
 
@@ -272,7 +285,6 @@ export default function DailyPage() {
   const [error, setError] = useState<string>("");
 
   const [alreadyPlayed, setAlreadyPlayed] = useState<boolean>(false);
-  const [streak, setStreak] = useState<StreakInfo>({ current: 0, best: 0, todayPlayed: false });
 
   const fetchStatus = useCallback(async (id: string) => {
     try {
@@ -281,16 +293,12 @@ export default function DailyPage() {
         const j = await r.json();
         if (j?.ok) {
           setAlreadyPlayed(!!j.todayPlayed);
-          if (j.streak) setStreak(j.streak);
           return;
         }
       }
     } catch {}
     const played = !!safeLS.get(LS.keyPlayed(id));
     setAlreadyPlayed(played);
-    const cur = parseInt(safeLS.get(LS.keyStreak) || "0", 10) || 0;
-    const best = parseInt(safeLS.get(LS.keyBest) || "0", 10) || 0;
-    setStreak({ current: cur, best, todayPlayed: played });
   }, []);
 
   const fetchSpec = useCallback(async () => {
@@ -312,7 +320,7 @@ export default function DailyPage() {
     fetchSpec();
   }, [fetchSpec]);
 
-  /* ===== Client-normalized goals (6 total, exactly 1 letter: S, count 10–20) ===== */
+  /* ===== Client-normalized goals (6 total, exactly 1 letter: S) ===== */
   const clientGoals: DailyGoal[] = useMemo(
     () => normalizeGoals(spec?.goals ?? [], spec?.id),
     [spec?.goals, spec?.id]
@@ -331,6 +339,7 @@ export default function DailyPage() {
     () => Array.from(allowedCats).map(c => CHAIN_COLORS[c].label).join(", "),
     [allowedCats]
   );
+// app/daily/page.tsx — PART B
 
   /* ===== Local run state (Daily rules) ===== */
   const [started, setStarted] = useState(false);
@@ -524,9 +533,18 @@ export default function DailyPage() {
     const allCats: ChainKey[] = ["country", "animal", "name", "food", "brand", "screen"];
     const todaysCats: ChainKey[] = allowedCats.size > 0 ? Array.from(allowedCats) : allCats;
 
-    // Prefer shorter words (4-12) for playability
-    const toPool = (set: Set<string>) =>
-      Array.from(set).filter(w => w.length >= 4 && w.length <= 12);
+   // Prefer shorter words (4–12) and only plain ASCII letters
+
+  // Helper: allow only plain A–Z letters (no digits, no accents, no punctuation, no spaces)
+const onlyPlainLetters = (w: string) => /^[A-Za-z]+$/.test(w);
+
+// Prefer shorter words (4–12) and only plain ASCII letters
+const toPool = (set: Set<string>) =>
+  Array.from(set).filter(
+    (w) => w.length >= 4 && w.length <= 12 && onlyPlainLetters(w)
+  );
+
+
 
     const pools: Record<ChainKey, string[]> = {
       country: toPool(data.countries),
@@ -560,10 +578,9 @@ export default function DailyPage() {
         for (const c of shuffleArray(fromCats, rnd)) {
           const pool = pools[c];
           if (!pool || pool.length === 0) continue;
-          // attempt up to a few times to avoid duplicates
           for (let k = 0; k < 8; k++) {
             const w = pickFrom(pool, rnd);
-            if (w && !picks.includes(w)) {
+            if (w && !picks.includes(w) && noDigits(w)) {
               candidate = w;
               return;
             }
@@ -571,15 +588,9 @@ export default function DailyPage() {
         }
       };
 
-      // 1) intended category
       tryPick([cat]);
-
-      // 2) fallback: any of today's categories
       if (!candidate && todaysCats.length) tryPick(todaysCats);
-
-      // 3) last resort: any category
       if (!candidate) tryPick(allCats);
-
       if (candidate) picks.push(candidate);
     }
 
@@ -588,8 +599,10 @@ export default function DailyPage() {
 
   /* ===== Filtered list & remaining (for UI) ===== */
   const hiddenWordsFiltered = useMemo(() => {
-    if (allowedCats.size === 0) return hiddenWords;
-    return hiddenWords.filter((w) => {
+    // Defensive: also filter out any that might have digits
+    const baseList = hiddenWords.filter(noDigits);
+    if (allowedCats.size === 0) return baseList;
+    return baseList.filter((w) => {
       const cats = getCategories(w);
       return Array.from(cats).some((c) => allowedCats.has(c));
     });
@@ -600,7 +613,7 @@ export default function DailyPage() {
     [hiddenWordsFiltered, usedHidden]
   );
 
-  /* ===== Score SFX one-shots (kept; score is still a thing, just not a GOAL) ===== */
+  /* ===== Score SFX one-shots ===== */
   const SINGLE_WORD_SFX: Array<{ threshold: number; key: string }> = [
     { threshold: 800,   key: "word_1k" },
     { threshold: 1500,  key: "bigword" },
@@ -666,7 +679,7 @@ export default function DailyPage() {
       return nx;
     });
 
-    // letter starts bookkeeping (for letter goals)
+    // letter starts bookkeeping
     const startL = w[0].toLowerCase();
     setLetterCounts(lc => ({ ...lc, [startL]: (lc[startL] || 0) + 1 }));
 
@@ -705,6 +718,14 @@ export default function DailyPage() {
 
   /* ===== SAFE WORD click (ANYTIME; bypass chain-letter rule) ===== */
   const tryUseHiddenWord = useCallback(async (w: string) => {
+    if (!noDigits(w)) {
+      // Defensive guard: never allow a SAFE WORD with digits
+      setMsg("SAFE WORDs never contain numbers.");
+      try { vfx.shake(inputRef.current || "input[name='word']"); } catch {}
+      try { safePlay("used"); } catch {}
+      return;
+    }
+
     const wl = w.toLowerCase();
     if (usedHidden.has(wl)) return;
 
@@ -788,44 +809,16 @@ export default function DailyPage() {
     prevMetRef.current = nowMet;
   }, [goalState, started, clientGoals.length, safePlay, vfx]);
 
-  /* ===== Submit + streak helpers ===== */
-  const updateLocalStreak = (completedId?: string) => {
-    if (!completedId) return;
-    safeLS.set(LS.keyPlayed(completedId), "1");
-    const lastId = safeLS.get(LS.keyLastId);
-    const cur = parseInt(safeLS.get(LS.keyStreak) || "0", 10) || 0;
-    let nextCur = cur > 0 ? cur : 0;
-    if (lastId !== completedId) {
-      nextCur = cur + 1;
-      safeLS.set(LS.keyLastId, completedId);
-    }
-    const best = Math.max(parseInt(safeLS.get(LS.keyBest) || "0", 10) || 0, nextCur);
-    safeLS.set(LS.keyStreak, String(nextCur));
-    safeLS.set(LS.keyBest, String(best));
-    setStreak({ current: nextCur, best, todayPlayed: true });
-    setAlreadyPlayed(true);
-  };
-
-  async function pingPuzzleCompleteOnce(id: string) {
-    const k = LS.keyPuzzlePing(id);
-    if (safeLS.get(k)) return;
-    try {
-      const res = await fetch("/api/streaks/ping-complete", { method: "POST" });
-      if (res.ok) safeLS.set(k, "1");
-    } catch {
-      // ignore; server-side streak may still be updated by /submit
-    }
-  }
-
   const submitDaily = useCallback(async (reason?: string) => {
     if (!spec) return;
+
     try {
       const res = await fetch("/api/daily/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           id: spec.id,
-          score, // recorded for fun/leaderboards, NOT a goal
+          score,
           wordsPlayed: recent.slice().reverse(),
           catsCount,
           sameEnds,
@@ -835,29 +828,46 @@ export default function DailyPage() {
           completedAll: allGoalsMet,
         }),
       });
+
       const j = await res.json();
+
       if (!res.ok || !j?.ok) {
         setMsg(j?.message || "Submit failed.");
+        // Fall back to stats screen if we can't route
+        setShowStats(true);
+        setEndReason(reason || "");
+        return;
+      }
+
+      const didClear: boolean = !!j.fullClear;
+
+      if (didClear && j.awardedPiece) {
+        try {
+          window.dispatchEvent(new CustomEvent("wc:pieces:delta", { detail: { delta: 1 } }));
+        } catch {}
+      }
+
+      if (didClear || allGoalsMet) {
+        try { safePlay("mission"); } catch {}
+        try { vfx.confettiBurst({ power: 1.2 }); } catch {}
+      }
+
+      if (j.alreadyPlayed) setAlreadyPlayed(true);
+
+      if (didClear) {
+        const delta = j.awardedPiece ? 1 : 0;
+        router.push(`/daily/success?id=${encodeURIComponent(spec.id)}&score=${encodeURIComponent(String(score))}&delta=${delta}&awarded=0`);
+        return;
       } else {
-        setMsg(j.fullClear ? "Daily cleared! 🎉" : (reason || "Submitted."));
-        if (j.fullClear || allGoalsMet) {
-          try { safePlay("mission"); } catch {}
-          try { vfx.confettiBurst({ power: 1.2 }); } catch {}
-          if (spec?.id) pingPuzzleCompleteOnce(spec.id);
-        }
-        if (j.alreadyPlayed) setAlreadyPlayed(true);
-        if (j.streak) setStreak(j.streak);
-        if (!j.streak) updateLocalStreak(spec.id);
+        router.push(`/daily/failure?id=${encodeURIComponent(spec.id)}&score=${encodeURIComponent(String(score))}`);
+        return;
       }
     } catch {
       setMsg("Could not submit right now.");
-      updateLocalStreak(spec.id);
-      if (spec?.id && allGoalsMet) pingPuzzleCompleteOnce(spec.id);
-    } finally {
       setShowStats(true);
       setEndReason(reason || "");
     }
-  }, [spec, score, catsCount, sameEnds, maxChain, recent, serverStartedAt, safePlay, vfx, allGoalsMet]);
+  }, [spec, score, catsCount, sameEnds, maxChain, recent, serverStartedAt, safePlay, vfx, allGoalsMet, router]);
 
   const endRun = useCallback((reason: string) => {
     setStarted(false);
@@ -983,20 +993,13 @@ export default function DailyPage() {
   }
 
   const showRestrictionHint = allowedCats.size > 0;
+  const validBannerText = `Valid today: ${allowedCatsList}`;
 
   return (
     <div className="mx-auto max-w-4xl p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Daily Puzzle</h1>
-          {/* Streak pill (signed-in users) */}
-          <div className="hidden sm:flex items-center gap-1 rounded-full border px-3 py-1 text-sm border-gray-200 dark:border-gray-700">
-            <span>🔥</span>
-            <span className="font-semibold">{streak.current || 0}</span>
-            {typeof streak.best === "number" && (
-              <span className="text-gray-500 dark:text-gray-400 text-xs"> (best {streak.best})</span>
-            )}
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/leaderboard" className="btn btn-ghost btn-sm">Leaderboard</Link>
@@ -1016,10 +1019,6 @@ export default function DailyPage() {
                   <div>Starter: <b>{spec.starter}</b></div>
                   <div>Time: <b>{spec.timeSeconds}s</b></div>
                 </div>
-                {/* Streak inline on mobile */}
-                <div className="sm:hidden flex items-center gap-1 rounded-full border px-2 py-1 text-xs border-gray-200 dark:border-gray-700">
-                  <span>🔥</span><span className="font-semibold">{streak.current || 0}</span>
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -1027,13 +1026,8 @@ export default function DailyPage() {
                 <GoalGrid goals={clientGoals} state={goalState} />
               </div>
 
-              {showRestrictionHint && (
-                <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
-                  Valid today: <b>{allowedCatsList}</b>
-                </div>
-              )}
+              {showRestrictionHint && <ValidBanner text={validBannerText} />}
 
-              {/* NOTE: SAFE WORDS PREVIEW REMOVED FROM START SCREEN */}
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 Rules: Next word must start with the previous last letter and include the previous first letter somewhere.
                 (SAFE WORD buttons ignore this rule during play.)
@@ -1041,7 +1035,7 @@ export default function DailyPage() {
 
               {!isSignedIn && (
                 <div className="rounded-xl border bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-                  Sign in to track your daily streak.
+                  Sign in to collect puzzle pieces.
                   <button className="ml-2 underline" onClick={() => signIn("google")}>Sign in with Google</button>
                 </div>
               )}
@@ -1082,19 +1076,15 @@ export default function DailyPage() {
                 {/* Goals row */}
                 <GoalGrid goals={clientGoals} state={goalState} />
 
-                {/* Restriction hint */}
-                {showRestrictionHint && (
-                  <div className="text-xs text-gray-700 dark:text-gray-300 rounded-lg border bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
-                    Valid today: <b>{allowedCatsList}</b>
-                  </div>
-                )}
+                {/* Restriction hint (prominent) */}
+                {showRestrictionHint && <ValidBanner text={validBannerText} />}
 
                 {/* Last word above input */}
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   Last word: <b className="break-words">{last === "start" ? spec.starter : last}</b>
                 </div>
 
-                {/* Input (explicit high-contrast dark styles) */}
+                {/* Input */}
                 <form onSubmit={onSubmit} className="mt-2 flex gap-2">
                   <input
                     ref={inputRef}
@@ -1117,7 +1107,7 @@ export default function DailyPage() {
                   <button className="btn btn-primary">Submit</button>
                 </form>
 
-                {/* Message area: light stays rose, dark turns emerald */}
+                {/* Message area */}
                 <div className="min-h-6 text-rose-600 dark:text-emerald-300">{msg}</div>
 
                 {/* Recent */}
@@ -1202,15 +1192,11 @@ export default function DailyPage() {
             </div>
           )}
 
-          {/* STATS SCREEN (post-run) */}
+          {/* STATS SCREEN (post-run) — fallback if navigation fails */}
           {!started && showStats && spec && (
             <div className="card p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold">Daily Stats</h2>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="rounded-full border px-2 py-0.5 border-gray-200 dark:border-gray-700">🔥 {streak.current || 0}</span>
-                  {typeof streak.best === "number" && <span className="text-gray-500 dark:text-gray-400">(best {streak.best})</span>}
-                </div>
               </div>
 
               <div>
@@ -1256,7 +1242,7 @@ export default function DailyPage() {
                 </button>
                 <Link href="/leaderboard" className="btn">Leaderboard</Link>
                 {!isSignedIn && (
-                  <button className="btn" onClick={() => signIn("google")}>Sign in to save streak</button>
+                  <button className="btn" onClick={() => signIn("google")}>Sign in to collect pieces</button>
                 )}
               </div>
             </div>
@@ -1264,7 +1250,7 @@ export default function DailyPage() {
         </>
       )}
 
-      {/* Local styles (keep existing utility classes) */}
+      {/* Local styles */}
       <style jsx global>{`
         .card { @apply rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-white/5 shadow-sm backdrop-blur; }
         .btn { @apply rounded-xl px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition; }
@@ -1275,7 +1261,7 @@ export default function DailyPage() {
   );
 }
 
-/* ===== Goals grid (fixed progress shading; supports category + trick + letter) ===== */
+/* ===== Goals grid ===== */
 function GoalGrid({
   goals,
   state,
@@ -1305,13 +1291,11 @@ function GoalGrid({
                 : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
             ].join(" ")}
           >
-            {/* Single progress fill (no competing sheen) */}
             <div
               className={`absolute inset-y-0 left-0 transition-all duration-300 ${s.met ? "bg-emerald-200/60 dark:bg-emerald-700/30" : "bg-gray-200/60 dark:bg-gray-700/30"}`}
               style={{ width: `${s.pct}%` }}
               aria-hidden
             />
-            {/* Content */}
             <div className="relative z-10 flex items-center justify-between">
               <span className="truncate">
                 {isLetter ? (

@@ -45,7 +45,6 @@ function rngFromSeed(seedStr: string) {
   return mulberry32(seed);
 }
 
-// Load word lists from your public JSONs
 async function loadWords(url: string): Promise<string[]> {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -60,10 +59,14 @@ async function loadWords(url: string): Promise<string[]> {
   }
 }
 
+/** Hard filter: no words containing digits */
+const noDigits = (w: string) => !/\d/.test(w);
+
 /**
  * Deterministic 3 hidden words per Toronto day:
  * - Seed = "hidden-" + Toronto ISO date
  * - Rotates across category pools if available
+ * - Filters out any words containing digits (7Up, etc.)
  */
 export async function generateDailyHiddenWords(date = new Date()) {
   const dateKey = torontoISODate(date);
@@ -79,13 +82,17 @@ export async function generateDailyHiddenWords(date = new Date()) {
     loadWords(`${base}/wordchains/screen.json`),
   ]);
 
+  // Pre-filter: keep only words without digits and with friendly length 4..12
+  const prep = (list: string[]) =>
+    list.filter(noDigits).filter((w) => w.length >= 4 && w.length <= 12);
+
   const pools: Array<{ cat: string; words: string[] }> = [
-    { cat: "animal", words: animals },
-    { cat: "country", words: countries },
-    { cat: "name", words: names },
-    { cat: "food", words: foods },
-    { cat: "brand", words: brands },
-    { cat: "screen", words: screen },
+    { cat: "animal", words: prep(animals) },
+    { cat: "country", words: prep(countries) },
+    { cat: "name",   words: prep(names) },
+    { cat: "food",   words: prep(foods) },
+    { cat: "brand",  words: prep(brands) },
+    { cat: "screen", words: prep(screen) },
   ].filter((p) => p.words.length > 0);
 
   const chosen: string[] = [];
@@ -96,7 +103,7 @@ export async function generateDailyHiddenWords(date = new Date()) {
     if (!pool) break;
     let candidate = pool.words[Math.floor(rng() * pool.words.length)];
     let guard = 0;
-    while (used.has(candidate.toLowerCase()) && guard++ < 25) {
+    while ((used.has(candidate.toLowerCase()) || !noDigits(candidate)) && guard++ < 25) {
       candidate = pool.words[Math.floor(rng() * pool.words.length)];
     }
     used.add(candidate.toLowerCase());

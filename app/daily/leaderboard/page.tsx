@@ -1,4 +1,3 @@
-// app/daily/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -6,11 +5,15 @@ import Link from "next/link";
 
 type LBRow = {
   id: string;
+  // score used to be points; API now fills this with seconds for back-compat,
+  // but we prefer timeTakenSec below and ignore score for display.
   score: number;
   completedAll: boolean;
   userId: string | null;
   createdAt: string;
   user?: { name?: string | null; username?: string | null; image?: string | null };
+  // NEW: explicit time in seconds (2dp for display)
+  timeTakenSec?: number | null;
 };
 
 export default function DailyLeaderboardPage() {
@@ -26,6 +29,7 @@ export default function DailyLeaderboardPage() {
         const j = await r.json();
         if (j?.ok) {
           setDateKey(j.dateKey);
+          // API provides "runs" (today's top by fastest time)
           setRows(j.runs || []);
         }
       } finally {
@@ -54,27 +58,36 @@ export default function DailyLeaderboardPage() {
           <div className="mt-4 text-gray-600 dark:text-neutral-400">No entries yet. Be the first!</div>
         ) : (
           <ol className="mt-4 space-y-2">
-            {rows.map((r, i) => (
-              <li
-                key={r.id}
-                className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white/70 p-2
-                           dark:border-neutral-800 dark:bg-neutral-900/60"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-7 text-center font-semibold">{i + 1}</div>
-                  <div className="text-sm">
-                    <div className="font-medium">
-                      {r.user?.username || r.user?.name || (r.userId ? "Player" : "Guest")}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-neutral-400">
-                      {new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      {r.completedAll ? " · Completed" : ""}
+            {rows.map((r, i) => {
+              const displayName = r.user?.username || r.user?.name || (r.userId ? "Player" : "Guest");
+              const time =
+                typeof r.timeTakenSec === "number" && isFinite(r.timeTakenSec)
+                  ? r.timeTakenSec.toFixed(2) + "s"
+                  : typeof r.score === "number" && isFinite(r.score)
+                  ? Number(r.score).toFixed(2) + "s" // back-compat if API only set score
+                  : "—";
+              return (
+                <li
+                  key={r.id}
+                  className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white/70 p-2
+                             dark:border-neutral-800 dark:bg-neutral-900/60"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-7 text-center font-semibold">{i + 1}</div>
+                    <div className="text-sm">
+                      <div className="font-medium">{displayName}</div>
+                      <div className="text-xs text-gray-500 dark:text-neutral-400">
+                        {new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {r.completedAll ? " · Completed" : ""}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="text-lg font-semibold tabular-nums">{r.score.toLocaleString()}</div>
-              </li>
-            ))}
+                  <div className="text-lg font-semibold tabular-nums" title="Time (s)">
+                    {time}
+                  </div>
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>

@@ -26,17 +26,19 @@ model User {
   sessions    Session[]
   playerStats PlayerStats?
   dailyStreak DailyStreak? // opposite side of DailyStreak.user relation
-  dailyRuns   DailyRun[] // optional runs linked to this user
+  dailyRuns   DailyRun[]   // optional runs linked to this user
   dailyPieces DailyPiece[] // collectible pieces
 
   // NEW: back-ref for Chain Mode runs
   chainRuns ChainRun[]
 
   // NEW: back-refs for RankedMatch relations
-  rankedAsPlayerOne RankedMatch[]  @relation("RankedPlayerOne")
-  rankedAsPlayerTwo RankedMatch[]  @relation("RankedPlayerTwo")
-  RankedRating      RankedRating[]
-  LadderTicket      LadderTicket?
+  rankedAsPlayerOne RankedMatch[] @relation("RankedPlayerOne")
+  rankedAsPlayerTwo RankedMatch[] @relation("RankedPlayerTwo")
+
+  // NEW (fix Prisma validation): opposite relation fields
+  rankedRating RankedRating?  // NEW
+  ladderTicket LadderTicket?  // NEW
 }
 
 model Account {
@@ -127,8 +129,8 @@ model DailyRun {
   id           String   @id @default(cuid())
   userId       String? // NextAuth user id (optional if playing as guest)
   deviceId     String? // anonymous-device id (cookie) for guests
-  specId       String // e.g., "2025-09-15" or hash
-  dateKey      String // canonical daily key (e.g., "2025-09-15")
+  specId       String  // e.g., "2025-09-15" or hash
+  dateKey      String  // canonical daily key (e.g., "2025-09-15")
   score        Int
   wordsPlayed  String[] @default([])
   catsJson     Json     @default("{}") // { name: n, animal: n, ... }
@@ -137,16 +139,24 @@ model DailyRun {
   completedAll Boolean  @default(false)
   createdAt    DateTime @default(now())
 
+  /// authoritative elapsed seconds for speed LB
+  timeTakenSec Float?   // NEW
+
   // Optional relation to User (SetNull on delete keeps guest/device runs intact)
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   // Constraints: one entry per (user, spec) or (device, spec)
   @@unique([userId, specId], name: "uniq_user_spec")
   @@unique([deviceId, specId], name: "uniq_device_spec")
-  // Fast lookups for leaderboards
+
+  // Fast lookups for leaderboards (score)
   @@index([specId, score(sort: Desc)], name: "idx_spec_score")
   @@index([dateKey, score(sort: Desc)], name: "idx_date_score")
   @@index([dateKey, createdAt], name: "idx_date_created")
+
+  // Speed-based indexes (completed clears only)
+  @@index([dateKey, completedAll, timeTakenSec(sort: Asc)], name: "idx_date_speed") // NEW
+  @@index([specId, completedAll, timeTakenSec(sort: Asc)], name: "idx_spec_speed")  // NEW
 }
 
 model DailyStreak {
@@ -171,12 +181,12 @@ model StreakEvent {
 }
 
 enum StreakKind {
-  PLAYED_ANY_MODE // counts toward Daily Streak
-  COMPLETED_DAILY_PUZZLE // counts toward Puzzle Streak
+  PLAYED_ANY_MODE           // counts toward Daily Streak
+  COMPLETED_DAILY_PUZZLE    // counts toward Puzzle Streak
 }
 
 /**
- * ========= NEW: Daily collectible piece =========
+ * ========= Daily collectible piece =========
  * One row per (userId, dateKey) when a user beats that day's Daily.
  */
 model DailyPiece {
@@ -192,24 +202,25 @@ model DailyPiece {
 }
 
 /**
- * ========= NEW: Chain Mode runs (leaderboard) =========
+ * ========= Chain Mode runs (leaderboard) =========
  * Stores score + longest chain; supports guests via deviceId and optional playerName.
  */
 model ChainRun {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt // 👈 add @default(now())
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt  // 👈 add @default(now())
 
-  userId       String?
-  deviceId     String?
-  playerName   String?
-  seasonKey    String  @default("global")
+  userId     String?
+  deviceId   String?
+  playerName String?
+  seasonKey  String   @default("global")
   score        Int
   longestChain Int
-  user         User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([userId, seasonKey], name: "uniq_chain_user_season")
   @@unique([deviceId, seasonKey], name: "uniq_chain_device_season")
+
   @@index([seasonKey, score(sort: Desc), createdAt], name: "idx_chain_season_score")
   @@index([seasonKey, longestChain(sort: Desc), createdAt], name: "idx_chain_season_longest")
   @@index([createdAt], name: "idx_chain_created")
@@ -218,7 +229,7 @@ model ChainRun {
 }
 
 /**
- * ========= NEW: Ladder / Elo support =========
+ * ========= Ladder / Elo support =========
  */
 model RankedRating {
   userId    String   @id
@@ -243,19 +254,20 @@ model LadderTicket {
 }
 
 enum RankedKind {
-  DUEL // Play a Friend
+  DUEL   // Play a Friend
   LADDER // Elo matchmaking
 }
 
 /**
- * ========= NEW: Ranked Chain battles (same-seed, longest chain wins) =========
+ * ========= Ranked Chain battles =========
+ * Stores results + optional Elo deltas for Ladder matches.
  */
 model RankedMatch {
   id        String   @id @default(cuid())
   seed      String
   createdAt DateTime @default(now())
 
-  // NEW: match flavor (friend duel vs ladder)
+  // match flavor (friend duel vs ladder)
   kind RankedKind @default(DUEL)
 
   // Players
@@ -263,7 +275,7 @@ model RankedMatch {
   playerOne   User   @relation("RankedPlayerOne", fields: [playerOneId], references: [id])
 
   playerTwoId String?
-  playerTwo   User?   @relation("RankedPlayerTwo", fields: [playerTwoId], references: [id])
+  playerTwo   User?  @relation("RankedPlayerTwo", fields: [playerTwoId], references: [id])
 
   // Results
   playerOneChainLength Int?
@@ -271,7 +283,7 @@ model RankedMatch {
   playerTwoChainLength Int?
   playerTwoScore       Int?
 
-  // NEW — Elo deltas (only for LADDER matches)
+  // Elo deltas (only for LADDER matches)
   ratingDeltaOne Int?
   ratingDeltaTwo Int?
 
