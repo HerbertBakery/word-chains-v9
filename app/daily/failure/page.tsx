@@ -1,10 +1,18 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { Suspense, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 export default function DailyFailurePage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl px-4 py-10">Loading…</div>}>
+      <DailyFailureInner />
+    </Suspense>
+  );
+}
+
+function DailyFailureInner() {
   const sp = useSearchParams();
   const dateKey = sp.get('id') || 'today';
   const score = sp.get('score') || undefined;

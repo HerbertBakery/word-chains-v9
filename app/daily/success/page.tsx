@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
@@ -13,6 +13,14 @@ import { useSearchParams } from 'next/navigation';
  *   - awarded: "1" only if the server actually awarded a piece on submit
  */
 export default function DailySuccessPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl px-4 py-10">Loading…</div>}>
+      <DailySuccessInner />
+    </Suspense>
+  );
+}
+
+function DailySuccessInner() {
   const sp = useSearchParams();
 
   const dateKey = sp.get('id') || 'today';
