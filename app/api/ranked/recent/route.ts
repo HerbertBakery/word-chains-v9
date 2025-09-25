@@ -1,4 +1,3 @@
-// app/api/ranked/recent/route.ts
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -8,12 +7,16 @@ export async function GET() {
   const session = await getServerSession(authOptions);
 
   // When logged out, return an empty list so the UI never crashes
-  if (!session?.user?.id) {
+  const userId = session?.user?.id;
+  if (!userId) {
     return NextResponse.json([]);
   }
 
-  // Recent ranked matches (adjust 'take' as desired)
+  // Only this user's recent ranked matches (either side of the match)
   const matches = await prisma.rankedMatch.findMany({
+    where: {
+      OR: [{ playerOneId: userId }, { playerTwoId: userId }],
+    },
     orderBy: { createdAt: "desc" },
     take: 20,
     include: {
@@ -22,6 +25,5 @@ export async function GET() {
     },
   });
 
-  // You can map/augment here if needed; we return as-is
   return NextResponse.json(matches);
 }

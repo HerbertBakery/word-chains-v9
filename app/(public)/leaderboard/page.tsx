@@ -1,4 +1,3 @@
-// app/(public)/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -7,7 +6,7 @@ import ChainLeaderboard from "@/app/play/chain/ChainLeaderboard";
 /* ===================== Shared types for Daily tab (SPEED) ===================== */
 type DailyRow = {
   id: string;
-  timeTakenSec: number; // NEW — authoritative, two-decimal seconds from API
+  timeTakenSec: number;
   dateKey?: string;
   createdAt: string;
   user?: { id: string; name: string | null; username: string | null; image: string | null };
@@ -19,8 +18,8 @@ type DailyPayload = {
   dateKey: string;
   todayKey: string;
   todaySpecId: string;
-  bestToday: number | null;    // fastest time for selected day
-  bestAllTime: number | null;  // fastest time across all days
+  bestToday: number | null;
+  bestAllTime: number | null;
   yourRankToday: number | null;
   streak: { current: number; best: number } | null;
   topForDay: DailyRow[];
@@ -29,12 +28,11 @@ type DailyPayload = {
   offset: number;
 };
 
-/* Utilities */
 const fmtTime = (s?: number | null) => (typeof s === "number" && isFinite(s) ? `${s.toFixed(2)}s` : "—");
 
 /* ===================== Page with tabs ===================== */
 export default function LeaderboardTabsPage() {
-  const [tab, setTab] = useState<"main" | "daily" | "chain">("main");
+  const [tab, setTab] = useState<"main" | "daily" | "chain" | "ladder">("main");
 
   return (
     <div className="space-y-6">
@@ -73,10 +71,28 @@ export default function LeaderboardTabsPage() {
           >
             Chain
           </button>
+          <button
+            className={`px-3 py-1.5 text-sm rounded-lg transition ${
+              tab === "ladder"
+                ? "bg-black text-white dark:bg-white dark:text-black"
+                : "text-neutral-700 dark:text-neutral-300"
+            }`}
+            onClick={() => setTab("ladder")}
+          >
+            Ladder
+          </button>
         </div>
       </div>
 
-      {tab === "main" ? <MainLeaderboard /> : tab === "daily" ? <DailyLeaderboard /> : <ChainLeaderboard />}
+      {tab === "main" ? (
+        <MainLeaderboard />
+      ) : tab === "daily" ? (
+        <DailyLeaderboard />
+      ) : tab === "chain" ? (
+        <ChainLeaderboard />
+      ) : (
+        <LadderLeaderboard />
+      )}
     </div>
   );
 }
@@ -99,7 +115,7 @@ const METRICS = [
 type Leader = {
   userId: string;
   username?: string | null;
-  handle?: string | null; // used to route to /u/[handle]
+  handle?: string | null;
   image?: string | null;
   value: number;
 };
@@ -138,7 +154,7 @@ function MainLeaderboard() {
     if (leader.handle) {
       window.location.href = `/u/${encodeURIComponent(leader.handle)}`;
     } else {
-      setSelectedUser(leader.userId); // fallback modal for users without a username yet
+      setSelectedUser(leader.userId);
     }
   };
 
@@ -302,7 +318,7 @@ function UserModal({ userId, onClose }: { userId: string; onClose: () => void })
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-white/5">
+    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg:white/5">
       <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
       <div className="font-semibold">{value}</div>
     </div>
@@ -316,7 +332,7 @@ function Stat({ label, value }: { label: string; value: any }) {
 function DailyLeaderboard() {
   const [data, setData] = useState<DailyPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState<string>(""); // blank = today
+  const [date, setDate] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -420,6 +436,102 @@ function DailyBoard({ title, rows, showDate = false }: { title: string; rows: Da
         ))}
         {rows.length === 0 && <li className="p-4 text-sm text-neutral-500 dark:text-neutral-400">No entries yet.</li>}
       </ol>
+    </div>
+  );
+}
+
+/* ===================================================================== */
+/* ============================ LADDER TAB ============================== */
+/* ===================================================================== */
+
+type LadderRow = {
+  userId: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  updatedAt: string;
+  user: { id: string; username: string | null; name: string | null; image: string | null };
+};
+
+function LadderLeaderboard() {
+  const [rows, setRows] = useState<LadderRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+        const r = await fetch("/api/ladder/standings");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setRows(Array.isArray(j?.standings) ? j.standings : []);
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message || "Failed to load ladder.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white/70 shadow-sm
+                    dark:border-neutral-800 dark:bg-neutral-900/60">
+      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 font-semibold dark:border-neutral-800 dark:bg-white/5">
+        Ladder · Elo Rankings
+      </div>
+      {loading && <div className="p-6 text-sm text-neutral-500 dark:text-neutral-400">Loading…</div>}
+      {err && !loading && (
+        <div className="p-6 text-sm text-rose-600 dark:text-rose-400">{err}</div>
+      )}
+      {!loading && !err && (
+        <table className="table">
+          <thead>
+            <tr>
+              <th className="w-14">#</th>
+              <th>Player</th>
+              <th className="text-right">Elo</th>
+              <th className="text-right">W-L-D</th>
+              <th className="text-right">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.userId} className="border-t border-neutral-100 dark:border-neutral-800">
+                <td className="p-3">{i + 1}</td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
+                      {r.user?.image ? <img src={r.user.image} alt="" className="h-full w-full object-cover" /> : null}
+                    </div>
+                    <div className="truncate font-medium">{r.user?.username ?? r.user?.name ?? r.userId}</div>
+                  </div>
+                </td>
+                <td className="p-3 text-right font-semibold tabular-nums">{r.rating}</td>
+                <td className="p-3 text-right tabular-nums">
+                  {r.wins}-{r.losses}-{r.draws}
+                </td>
+                <td className="p-3 text-right text-xs opacity-70">
+                  {new Date(r.updatedAt).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-6 text-sm text-neutral-500 dark:text-neutral-400">
+                  No ladder data yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
