@@ -1,6 +1,3 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -23,7 +20,7 @@ export async function GET(req: Request) {
   };
 
   try {
-    // Session (only used for "your rank" and streak)
+    // Session (only used for "your rank"/streak, etc.)
     let userId: string | undefined;
     try {
       const session = await getServerSession(authOptions);
@@ -36,6 +33,7 @@ export async function GET(req: Request) {
     const dateParam = searchParams.get("date");
     const limit = parseIntSafe(searchParams.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);
     const offset = parseIntSafe(searchParams.get("offset"), 0, 0);
+    const metric = (searchParams.get("metric") || searchParams.get("mode") || "speed").toLowerCase();
 
     // Today
     let todayKey = "";
@@ -49,9 +47,62 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "Failed to load today key" }, { status: 500 });
     }
 
+    // ==== NEW: Pieces (all-time total DailyPiece rows per user) ====
+    if (metric === "pieces" || metric === "puzzle" || metric === "puzzle_pieces") {
+      const safe = async <T,>(fn: () => Promise<T>, tag: string): Promise<T | null> => {
+        try { return await fn(); }
+        catch (e: any) { log(`${tag} prisma error`, { message: e?.message, code: e?.code, meta: e?.meta }); return null; }
+      };
+
+      // group by userId, count pieces, order by count desc
+      const grouped =
+        (await safe(
+          () =>
+            prisma.dailyPiece.groupBy({
+              by: ["userId"],
+              _count: { _all: true },
+              orderBy: { _count: { _all: "desc" } },
+              take: limit,
+              skip: offset,
+            }),
+          "groupBy(dailyPiece)"
+        )) ?? [];
+
+      const userIds = grouped.map((g) => g.userId);
+      const users =
+        (await safe(
+          () =>
+            prisma.user.findMany({
+              where: { id: { in: userIds } },
+              select: { id: true, name: true, username: true, image: true },
+            }),
+          "findMany(users for pieces)"
+        )) ?? [];
+      const userMap = new Map(users.map((u) => [u.id, u]));
+
+      // Optional personal totals (doesn't affect UI if unauthenticated)
+      const yourTotal =
+        userId
+          ? await safe(() => prisma.dailyPiece.count({ where: { userId } }), "count(your pieces)")
+          : null;
+
+      return NextResponse.json({
+        ok: true,
+        mode: "pieces",
+        leaders: grouped.map((g) => ({
+          userId: g.userId,
+          pieces: g._count._all,
+          user: userMap.get(g.userId) ?? null,
+        })),
+        yourTotal: typeof yourTotal === "number" ? yourTotal : null,
+        limit,
+        offset,
+      });
+    }
+
+    // ==== Existing SPEED leaderboard (default) ====
     const dateKey = dateParam && DATE_RE.test(dateParam) ? dateParam : todayKey;
 
-    // Helpers
     const safe = async <T,>(fn: () => Promise<T>, tag: string): Promise<T | null> => {
       try { return await fn(); }
       catch (e: any) { log(`${tag} prisma error`, { message: e?.message, code: e?.code, meta: e?.meta }); return null; }
@@ -66,7 +117,6 @@ export async function GET(req: Request) {
               dateKey,
               completedAll: true,
               NOT: { userId: null },
-              // Only rows that actually recorded time
               timeTakenSec: { not: null },
             },
             orderBy: [{ timeTakenSec: "asc" }, { createdAt: "asc" }],
@@ -171,32 +221,29 @@ export async function GET(req: Request) {
       if (s) streak = s;
     }
 
-    // Back-compat for current UI: provide `runs` (today-only).
-    // NOTE: we set `score` to seconds for now; the page will be updated next to show "Time (s)" with 2 dp.
-    const runs = topForDay.map((r) => ({
-      id: r.id,
-      // Will be replaced on the UI step; for now, "score" carries seconds so the list isn't empty.
-      score: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : 0,
-      completedAll: true,
-      userId: r.userId,
-      createdAt: r.createdAt as unknown as string,
-      user: r.user ? { name: r.user.name, username: r.user.username, image: r.user.image } : undefined,
-      // Extra fields the new UI will use:
-      timeTakenSec: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : null,
-    }));
-
+    // Back-compat shape for existing Daily UI (speed mode)
     return NextResponse.json({
       ok: true,
+      mode: "speed",
       dateKey,
       todayKey,
       todaySpecId,
-      fastestToday,
-      fastestAllTime,
+      bestToday: fastestToday,
+      bestAllTime: fastestAllTime,
       yourRankToday,
       streak,
       topForDay,
       topAllTime,
-      runs,      // <- current page reads this
+      // Kept for older UIs that read `runs` (not used by the tabs page)
+      runs: topForDay.map((r) => ({
+        id: r.id,
+        score: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : 0,
+        completedAll: true,
+        userId: r.userId,
+        createdAt: r.createdAt as unknown as string,
+        user: r.user ? { name: r.user.name, username: r.user.username, image: r.user.image } : undefined,
+        timeTakenSec: typeof r.timeTakenSec === "number" ? Number(r.timeTakenSec) : null,
+      })),
       limit,
       offset,
     });

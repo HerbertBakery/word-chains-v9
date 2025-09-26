@@ -1,3 +1,4 @@
+// app/(public)/leaderboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -9,7 +10,7 @@ type DailyRow = {
   timeTakenSec: number;
   dateKey?: string;
   createdAt: string;
-  user?: { id: string; name: string | null; username: string | null; image: string | null };
+  user?: { id: string; name: string | null; username: string | null; image: string | null } | null;
 };
 
 type DailyPayload = {
@@ -18,14 +19,31 @@ type DailyPayload = {
   dateKey: string;
   todayKey: string;
   todaySpecId: string;
-  bestToday: number | null;
-  bestAllTime: number | null;
+  // NOTE: some backends may send `fastestToday`/`fastestAllTime`; we normalize below
+  bestToday?: number | null;
+  bestAllTime?: number | null;
+  fastestToday?: number | null;
+  fastestAllTime?: number | null;
   yourRankToday: number | null;
   streak: { current: number; best: number } | null;
   topForDay: DailyRow[];
   topAllTime: DailyRow[];
   limit: number;
   offset: number;
+};
+
+/* ===================== Shared types for Daily tab (PIECES) ===================== */
+type PiecesLeader = {
+  userId: string;
+  pieces: number;
+  user?: { id: string; name: string | null; username: string | null; image: string | null } | null;
+};
+
+type PiecesPayload = {
+  ok: true;
+  mode: "pieces";
+  leaders: PiecesLeader[];
+  yourTotal?: number | null;
 };
 
 const fmtTime = (s?: number | null) => (typeof s === "number" && isFinite(s) ? `${s.toFixed(2)}s` : "—");
@@ -201,6 +219,14 @@ function MainLeaderboard() {
                   </td>
                 </tr>
               )}
+              {!loading && !error && rows.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="p-6 text-center text-neutral-500 dark:text-neutral-400">
+                    No data yet. Finish a game (signed in) so it posts to{" "}
+                    <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-white/10">/api/stats/ingest</code>.
+                  </td>
+                </tr>
+              )}
               {!loading && error && (
                 <tr>
                   <td colSpan={3} className="p-6">
@@ -211,20 +237,12 @@ function MainLeaderboard() {
                   </td>
                 </tr>
               )}
-              {!loading && !error && rows.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="p-6 text-center text-neutral-500 dark:text-neutral-400">
-                    No data yet. Finish a game (signed in) so it posts to{" "}
-                    <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-white/10">/api/stats/ingest</code>.
-                  </td>
-                </tr>
-              )}
               {!loading &&
                 !error &&
                 rows.map((r, idx) => (
                   <tr
                     key={r.userId}
-                    className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg:white/5"
+                    className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-white/5"
                     onClick={() => goTo(r)}
                   >
                     <td className="p-3">{idx + 1}</td>
@@ -318,7 +336,7 @@ function UserModal({ userId, onClose }: { userId: string; onClose: () => void })
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg:white/5">
+    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-white/5">
       <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
       <div className="font-semibold">{value}</div>
     </div>
@@ -330,88 +348,209 @@ function Stat({ label, value }: { label: string; value: any }) {
 /* ===================================================================== */
 
 function DailyLeaderboard() {
-  const [data, setData] = useState<DailyPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"speed" | "pieces">("speed");
 
+  // SPEED state
+  const [data, setData] = useState<DailyPayload | null>(null);
+  const [date, setDate] = useState<string>("");
+  const [loadingSpeed, setLoadingSpeed] = useState(true);
+  const [errorSpeed, setErrorSpeed] = useState<string | null>(null);
+
+  // PIECES state
+  const [pieces, setPieces] = useState<PiecesPayload | null>(null);
+  const [loadingPieces, setLoadingPieces] = useState(false);
+  const [errorPieces, setErrorPieces] = useState<string | null>(null);
+
+  // Fetch SPEED payload
   useEffect(() => {
+    if (view !== "speed") return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setLoadingSpeed(true);
+    setErrorSpeed(null);
     const url = date ? `/api/daily/leaderboard?date=${date}` : "/api/daily/leaderboard";
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((j) => {
-        if (!cancelled) setData(j?.ok ? j : null);
+        if (cancelled) return;
+        // Normalize possible server field names
+        if (j?.ok) {
+          const bestToday = j.bestToday ?? j.fastestToday ?? null;
+          const bestAllTime = j.bestAllTime ?? j.fastestAllTime ?? null;
+          setData({
+            ...j,
+            bestToday,
+            bestAllTime,
+            mode: "speed",
+          });
+        } else {
+          setData(null);
+        }
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.message || "Failed to load daily leaderboard.");
+        if (!cancelled) setErrorSpeed(e?.message || "Failed to load daily leaderboard.");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingSpeed(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [view, date]);
 
-  if (loading)
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-neutral-500 shadow-sm
-                      dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
-        Loading daily leaderboard…
-      </div>
-    );
-  if (error)
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
-                      dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
-        {error}
-      </div>
-    );
-  if (!data)
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
-                      dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
-        Could not load daily data.
-      </div>
-    );
+  // Fetch PIECES payload (leaders of all-time collected pieces)
+  useEffect(() => {
+    if (view !== "pieces") return;
+    let cancelled = false;
+    setLoadingPieces(true);
+    setErrorPieces(null);
+    // Endpoint expected to return: { ok:true, mode:"pieces", leaders:[{userId,pieces,user?}], yourTotal? }
+    fetch("/api/daily/pieces/leaders")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((j) => {
+        if (!cancelled) setPieces(j?.ok ? j : null);
+      })
+      .catch((e) => {
+        if (!cancelled) setErrorPieces(e?.message || "Failed to load puzzle pieces leaderboard.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPieces(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-neutral-200 bg-white/70 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">Daily Speed · {data.dateKey}</h2>
-            <div className="text-sm text-neutral-600 dark:text-neutral-300">
-              Fastest Today: <b>{fmtTime(data.bestToday)}</b> · Fastest (All Daily): <b>{fmtTime(data.bestAllTime)}</b>
-            </div>
-            {data.streak && (
-              <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
-                Your Streak: <b>{data.streak.current}</b> · Best: <b>{data.streak.best}</b>
-                {data.yourRankToday && <span className="ml-3">Your Rank Today: <b>#{data.yourRankToday}</b></span>}
-              </div>
-            )}
+      {/* Picker row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="rounded-2xl border border-neutral-200 bg-white/70 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60">
+          <div className="text-sm text-neutral-600 dark:text-neutral-300">
+            <span className="font-semibold">Daily Leaderboard</span>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-neutral-600 dark:text-neutral-300">View date:</label>
-            <input
-              type="date"
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <label className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Metric
+            </label>
+            <select
               className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm
                          dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
-              value={date}
-              max={data.todayKey}
-              onChange={(e) => setDate(e.target.value)}
-            />
+              value={view}
+              onChange={(e) => setView(e.target.value as "speed" | "pieces")}
+            >
+              <option value="speed">Speed (Fastest Time)</option>
+              <option value="pieces">Puzzle Pieces Collected (All-Time)</option>
+            </select>
+
+            {/* For Speed we allow date selection; pieces does not need a date */}
+            {view === "speed" && data && (
+              <div className="ml-2 flex items-center gap-2">
+                <label className="text-sm text-neutral-600 dark:text-neutral-300">View date:</label>
+                <input
+                  type="date"
+                  className="rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm
+                             dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+                  value={date}
+                  max={data.todayKey}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <DailyBoard title="Top Today (Fastest)" rows={data.topForDay} />
-        <DailyBoard title="All-Time Daily (Fastest)" rows={data.topAllTime} showDate />
-      </div>
+      {/* SPEED VIEW */}
+      {view === "speed" && (
+        <>
+          {loadingSpeed ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-neutral-500 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+              Loading daily leaderboard…
+            </div>
+          ) : errorSpeed ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
+              {errorSpeed}
+            </div>
+          ) : !data ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
+              Could not load daily data.
+            </div>
+          ) : (
+            <>
+              <div className="rounded-2xl border border-neutral-200 bg-white/70 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Daily Speed · {data.dateKey}</h2>
+                    <div className="text-sm text-neutral-600 dark:text-neutral-300">
+                      Fastest Today: <b>{fmtTime(data.bestToday ?? data.fastestToday)}</b> · Fastest (All Daily):{" "}
+                      <b>{fmtTime(data.bestAllTime ?? data.fastestAllTime)}</b>
+                    </div>
+                    {data.streak && (
+                      <div className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                        Your Streak: <b>{data.streak.current}</b> · Best: <b>{data.streak.best}</b>
+                        {data.yourRankToday && <span className="ml-3">Your Rank Today: <b>#{data.yourRankToday}</b></span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <DailyBoard title="Top Today (Fastest)" rows={data.topForDay} />
+                <DailyBoard title="All-Time Daily (Fastest)" rows={data.topAllTime} showDate />
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* PIECES VIEW */}
+      {view === "pieces" && (
+        <>
+          {loadingPieces ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-neutral-500 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+              Loading puzzle pieces leaderboard…
+            </div>
+          ) : errorPieces ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
+              {errorPieces}
+            </div>
+          ) : !pieces ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white/70 p-6 text-sm text-rose-600 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-rose-400">
+              Could not load puzzle pieces data.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white/70 shadow-sm
+                            dark:border-neutral-800 dark:bg-neutral-900/60">
+              <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-2 font-semibold dark:border-neutral-800 dark:bg-white/5">
+                All-Time Puzzle Pieces Collected
+              </div>
+              <ol className="divide-y divide-neutral-200 dark:divide-neutral-800">
+                {pieces.leaders.map((r, i) => (
+                  <li key={r.userId} className="flex items-center justify-between p-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="w-6 text-right tabular-nums">{i + 1}.</span>
+                      <div className="truncate">
+                        {r.user ? (r.user.username ?? r.user.name ?? "Anon") : r.userId}
+                      </div>
+                    </div>
+                    <span className="font-semibold tabular-nums">{r.pieces}</span>
+                  </li>
+                ))}
+                {pieces.leaders.length === 0 && (
+                  <li className="p-4 text-sm text-neutral-500 dark:text-neutral-400">No entries yet.</li>
+                )}
+              </ol>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
