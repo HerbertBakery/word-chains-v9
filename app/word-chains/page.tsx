@@ -239,6 +239,11 @@ async function postRunToLeaderboard(summary: {
     return { ok: false, status: 0, msg: "Network error saving score." };
   }
 }
+// Decide if a status message is "positive" so we can color it green
+const isPositiveMsg = (s: string) =>
+  /^\s*\+/.test(s) || // messages like: "+1234 points ..."
+  /(Mission complete|Powerup charged|Extra Life|New category unlocked|Thanks|Surge active|Sponsor Boost|Montage|Mirror Charm|NUKE deployed|Research)/i.test(s);
+
 
 /** ===================== Component ===================== */
 export default function WordChains() {
@@ -1640,7 +1645,8 @@ export default function WordChains() {
                 />
                 <button className="btn btn-primary">Submit</button>
               </form>
-              <div className="mt-3 text-rose-600 min-h-6 break-words">{msg}</div>
+              <div className={`mt-3 min-h-6 break-words ${isPositiveMsg(msg) ? "text-green-600" : "text-rose-600"}`}>{msg}</div>
+
               <div className="mt-4">
                 <h3 className="font-semibold">Recent Words</h3>
                 <div className="mt-2 grid grid-cols-2 md:grid-cols-2 gap-2">

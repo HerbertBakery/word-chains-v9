@@ -111,7 +111,6 @@ function ChainModeInner() {
   const [strictDictionary, setStrictDictionary] = useState(true);
   const [loadPct, setLoadPct] = useState(0);
   const [loadMsg, setLoadMsg] = useState("Loading…");
-
   useEffect(() => {
     (async () => {
       const TOTAL = 7;
@@ -208,9 +207,9 @@ function ChainModeInner() {
     screen: { length: 0, multiplier: 1 },
   });
 
-  // Start with 1 charge each (Chain & Ranked)
+  // Start charges: all 1 except Brands & Animals (start at 0)
   const [powerCharges, setPowerCharges] = useState<Record<ChainKey, number>>({
-    name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1,
+    name: 1, animal: 0, country: 1, food: 1, brand: 0, screen: 1,
   });
 
   const [resultHref, setResultHref] = useState<string | null>(null);
@@ -229,7 +228,6 @@ function ChainModeInner() {
         chains.brand.multiplier +
         chains.screen.multiplier
     );
-
   /* ===================== Helpers ===================== */
   const pickStarter = useCallback(() => {
     if (!dict || dict.size === 0) return "start";
@@ -258,8 +256,8 @@ function ChainModeInner() {
       brand: { length: 0, multiplier: 1 },
       screen: { length: 0, multiplier: 1 },
     });
-    // Reset to 1 charge each at the start of every run
-    setPowerCharges({ name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1 });
+    // Reset charges: all 1 except Brands & Animals (0)
+    setPowerCharges({ name: 1, animal: 0, country: 1, food: 1, brand: 0, screen: 1 });
     setSkips(SKIP_START);
     setCorrectStreak(0);
     setShowBoard(false);
@@ -409,7 +407,6 @@ function ChainModeInner() {
     nextCategory();
     setTimeLeft(15);
   }, [isOver, started, skips, play, pickStarter, nextCategory]);
-
   const applyAcceptedWord = useCallback((w: string) => {
     const wl = w.toLowerCase();
 
@@ -752,9 +749,10 @@ function ChainModeInner() {
                 <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
                 <div className="text-2xl font-bold tabular-nums">{score}</div>
               </div>
+              {/* REPLACED 'Words Played' with 'Chain Length' */}
               <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-                <div className="text-xs uppercase tracking-wide opacity-70">Words Played</div>
-                <div className="text-2xl font-bold tabular-nums">{Math.max(0, used.size)}</div>
+                <div className="text-xs uppercase tracking-wide opacity-70">Chain Length</div>
+                <div className="text-2xl font-bold tabular-nums">{chainLength}</div>
               </div>
               <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Base Multiplier</div>
