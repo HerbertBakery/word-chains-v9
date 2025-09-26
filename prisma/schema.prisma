@@ -37,8 +37,8 @@ model User {
   rankedAsPlayerTwo RankedMatch[] @relation("RankedPlayerTwo")
 
   // NEW (fix Prisma validation): opposite relation fields
-  rankedRating RankedRating?  // NEW
-  ladderTicket LadderTicket?  // NEW
+  rankedRating RankedRating?
+  ladderTicket LadderTicket?
 }
 
 model Account {
@@ -239,6 +239,8 @@ model RankedRating {
   losses    Int      @default(0)
   draws     Int      @default(0)
   updatedAt DateTime @updatedAt
+
+  @@index([rating, updatedAt], name: "idx_rating_updatedAt") // ← added
 }
 
 model LadderTicket {
@@ -291,4 +293,5 @@ model RankedMatch {
   completedAt DateTime?
 
   @@index([createdAt])
+  @@index([completedAt]) // ← added
 }

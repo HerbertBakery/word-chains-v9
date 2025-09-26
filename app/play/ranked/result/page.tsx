@@ -77,7 +77,6 @@ function ResultInner() {
   const decided = useMemo(() => {
     if (!data) return false;
     if (data.winnerId !== null && data.winnerId !== undefined) return true;
-    // fall back: both sides submitted identical stats (exact tie)
     const bothHave =
       data.playerOneChainLength !== null &&
       data.playerOneChainLength !== undefined &&
@@ -85,6 +84,19 @@ function ResultInner() {
       data.playerTwoChainLength !== undefined;
     return bothHave;
   }, [data]);
+
+  // 🔄 Once decided, nudge the Ladder endpoint and notify listeners
+  useEffect(() => {
+    if (!decided) return;
+    // Best-effort ping to ensure no stale caches anywhere (our API is no-store already)
+    fetch("/api/ladder/leaderboard?limit=50", { cache: "no-store" }).catch(() => {});
+    // Optional: let other UI (e.g., a mounted leaderboard tab) refetch immediately
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("ladder:refresh"));
+      }
+    } catch {}
+  }, [decided]);
 
   const p1 = data?.playerOne;
   const p2 = data?.playerTwo;

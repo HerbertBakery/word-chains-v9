@@ -4,6 +4,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// Always dynamic / no cache
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
+
 /**
  * GET → fetch match by id
  */
@@ -107,19 +111,28 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       data: { winnerId, completedAt: new Date() },
     });
 
-    if (claim.count === 1 && updated.kind === "LADDER" && updated.playerOneId && updated.playerTwoId) {
-      // We are the resolver → apply Elo once
-      const [r1, r2] = await Promise.all([
+    // ⭐ Always ensure both players have a RankedRating row once both sides submitted (even if DUEL)
+    if (updated.playerOneId && updated.playerTwoId) {
+      await prisma.$transaction([
         prisma.rankedRating.upsert({
           where: { userId: updated.playerOneId },
-          update: {},
-          create: { userId: updated.playerOneId, rating: 1200 },
+          update: {}, // no-op if exists
+          create: { userId: updated.playerOneId, rating: 1200, wins: 0, losses: 0, draws: 0 },
         }),
         prisma.rankedRating.upsert({
           where: { userId: updated.playerTwoId },
-          update: {},
-          create: { userId: updated.playerTwoId, rating: 1200 },
+          update: {}, // no-op if exists
+          create: { userId: updated.playerTwoId, rating: 1200, wins: 0, losses: 0, draws: 0 },
         }),
+      ]);
+    }
+
+    // If we won the claim AND it's a LADDER match, apply Elo exactly once
+    if (claim.count === 1 && updated.kind === "LADDER" && updated.playerOneId && updated.playerTwoId) {
+      // Read current ratings after upsert
+      const [r1, r2] = await Promise.all([
+        prisma.rankedRating.findUnique({ where: { userId: updated.playerOneId } }),
+        prisma.rankedRating.findUnique({ where: { userId: updated.playerTwoId } }),
       ]);
 
       // Scores for Elo (1/0.5/0)
@@ -131,27 +144,27 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
       const K = 32;
       const expected = (ra: number, rb: number) => 1 / (1 + Math.pow(10, (rb - ra) / 400));
-      const e1 = expected(r1.rating, r2.rating);
+      const e1 = expected(r1!.rating, r2!.rating);
       const delta1 = Math.round(K * (s1 - e1));
       const delta2 = -delta1;
 
       await prisma.$transaction([
         prisma.rankedRating.update({
-          where: { userId: r1.userId },
+          where: { userId: r1!.userId },
           data: {
-            rating: r1.rating + delta1,
-            wins: r1.wins + (s1 === 1 ? 1 : 0),
-            losses: r1.losses + (s1 === 0 ? 1 : 0),
-            draws: r1.draws + (s1 === 0.5 ? 1 : 0),
+            rating: { increment: delta1 },
+            wins:   { increment: s1 === 1   ? 1 : 0 },
+            losses: { increment: s1 === 0   ? 1 : 0 },
+            draws:  { increment: s1 === 0.5 ? 1 : 0 },
           },
         }),
         prisma.rankedRating.update({
-          where: { userId: r2.userId },
+          where: { userId: r2!.userId },
           data: {
-            rating: r2.rating + delta2,
-            wins: r2.wins + (s2 === 1 ? 1 : 0),
-            losses: r2.losses + (s2 === 0 ? 1 : 0),
-            draws: r2.draws + (s2 === 0.5 ? 1 : 0),
+            rating: { increment: delta2 },
+            wins:   { increment: s2 === 1   ? 1 : 0 },
+            losses: { increment: s2 === 0   ? 1 : 0 },
+            draws:  { increment: s2 === 0.5 ? 1 : 0 },
           },
         }),
         prisma.rankedMatch.update({
