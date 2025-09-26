@@ -60,10 +60,11 @@ export async function GET(req: Request) {
           () =>
             prisma.dailyPiece.groupBy({
               by: ["userId"],
-              _count: { _all: true },
-              orderBy: { _count: { _all: "desc" } },
-              take: limit,
-              skip: offset,
+_count: { _all: true },
+orderBy: { _count: { userId: "desc" } },
+take: limit,
+skip: offset,
+
             }),
           "groupBy(dailyPiece)"
         )) ?? [];
