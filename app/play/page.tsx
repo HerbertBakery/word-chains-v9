@@ -13,67 +13,66 @@ export default function PlayChooser() {
         <h1 className="text-2xl font-bold mb-4">Choose a Mode</h1>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* Free Play */}
-          <Link
-            href="/word-chains"
-            className="card hover:shadow-md transition"
-          >
-            <div className="text-lg font-semibold">Free Play</div>
-            <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
-              The original endless mode with powerups, links, and big multipliers.
-            </p>
-            <div className="mt-3 inline-flex items-center gap-2 text-sm">
-              <span className="badge">Classic</span>
-              <span className="badge">Endless</span>
-            </div>
-          </Link>
-
-          {/* Daily Puzzle */}
-          <Link
-            href="/daily"
-            className="card hover:shadow-md transition"
-          >
-            <div className="text-lg font-semibold">Daily Puzzle</div>
-            <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
-              Curated goals, toned-down score target, and 3 hidden words worth big bonuses.
-              Complete it to grow your Puzzle Streak.
-            </p>
-            <div className="mt-3 inline-flex items-center gap-2 text-sm">
-              <span className="badge badge-emerald">Goals</span>
-              <span className="badge badge-amber">Hidden Words</span>
-              <span className="badge badge-blue">Streaks</span>
-            </div>
-          </Link>
-
-          {/* Chain Mode */}
+          {/* Chain Mode (top-left) */}
           <Link
             href="/play/chain"
             className="card hover:shadow-md transition"
           >
             <div className="text-lg font-semibold">Chain Mode</div>
             <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
-              A fast-paced challenge: clear random categories within 15 seconds each. No lives, no penalties—just see how far you can chain!
+              Beat the clock—15-second turns, no lives, six rechargeable powerups. How long can you keep the chain alive?
             </p>
             <div className="mt-3 inline-flex items-center gap-2 text-sm">
               <span className="badge badge-purple">15s Timer</span>
-              <span className="badge badge-pink">Categories</span>
+              <span className="badge badge-pink">Powerups</span>
               <span className="badge badge-indigo">Endurance</span>
             </div>
           </Link>
 
-          {/* Ranked Mode */}
+          {/* Ranked Mode (top-right) */}
           <Link
             href="/play/ranked"
             className="card hover:shadow-md transition"
           >
             <div className="text-lg font-semibold">Ranked Mode</div>
             <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
-              Compete on a shared seed. Play Ladder for Elo or challenge a friend with a share link.
+              Test your skills in asynchronous head-to-head battles on a shared seed. Climb the ladder or challenge a friend.
             </p>
             <div className="mt-3 inline-flex items-center gap-2 text-sm">
               <span className="badge badge-rose">Elo</span>
               <span className="badge badge-indigo">Ladder</span>
               <span className="badge badge-emerald">Play a Friend</span>
+            </div>
+          </Link>
+
+          {/* Daily Puzzle (bottom-left) */}
+          <Link
+            href="/daily"
+            className="card hover:shadow-md transition"
+          >
+            <div className="text-lg font-semibold">Daily Puzzle</div>
+            <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
+              A fresh challenge every day. Beat today’s puzzle as fast as you can and build your streak.
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 text-sm">
+              <span className="badge badge-emerald">Daily</span>
+              <span className="badge badge-amber">Speed</span>
+              <span className="badge badge-blue">Streaks</span>
+            </div>
+          </Link>
+
+          {/* Free Play (bottom-right) */}
+          <Link
+            href="/word-chains"
+            className="card hover:shadow-md transition"
+          >
+            <div className="text-lg font-semibold">Free Play</div>
+            <p className="text-sm text-gray-600 mt-1 dark:text-gray-300">
+              Sandbox mode: anything goes. Stack multipliers, complete missions, unleash powerups—how high can you score?
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 text-sm">
+              <span className="badge">Classic</span>
+              <span className="badge">Endless</span>
             </div>
           </Link>
         </div>

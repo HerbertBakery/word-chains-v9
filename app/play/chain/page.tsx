@@ -73,7 +73,7 @@ const POWER_RULES: Record<ChainKey, PowerRule> = {
   country: { threshold: 5, label: "Nuke" },
   name: { threshold: 5, label: "ChatGPT" },
   food: { threshold: 3, label: "Letter Roll" },
-  screen: { threshold: 3, label: "Time Freeze" },
+  screen: { threshold: 6, label: "Time Freeze" }, // ← updated to 6
   brand: { threshold: 3, label: "Influencer" },
   animal: { threshold: 3, label: "Beast Mode" },
 };
@@ -184,6 +184,9 @@ function ChainModeInner() {
   const [used, setUsed] = useState<Set<string>>(new Set());
   const [score, setScore] = useState(0);
 
+  // Accurate chain length that never resets on NUKE
+  const [chainLength, setChainLength] = useState(0);
+
   const [skips, setSkips] = useState(SKIP_START);
   const [correctStreak, setCorrectStreak] = useState(0);
 
@@ -205,11 +208,16 @@ function ChainModeInner() {
     screen: { length: 0, multiplier: 1 },
   });
 
+  // Start with 1 charge each (Chain & Ranked)
   const [powerCharges, setPowerCharges] = useState<Record<ChainKey, number>>({
-    name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0,
+    name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1,
   });
 
   const [resultHref, setResultHref] = useState<string | null>(null);
+
+  // Submit status
+  const [submitState, setSubmitState] = useState<"idle" | "success" | "error">("idle");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const totalMult =
     Math.max(
@@ -240,6 +248,7 @@ function ChainModeInner() {
     setIsOver(false);
     setUsed(new Set());
     setScore(0);
+    setChainLength(0); // reset accurate chain counter
     setBasePowerMult(1);
     setChains({
       name: { length: 0, multiplier: 1 },
@@ -249,11 +258,14 @@ function ChainModeInner() {
       brand: { length: 0, multiplier: 1 },
       screen: { length: 0, multiplier: 1 },
     });
-    setPowerCharges({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0 });
+    // Reset to 1 charge each at the start of every run
+    setPowerCharges({ name: 1, animal: 1, country: 1, food: 1, brand: 1, screen: 1 });
     setSkips(SKIP_START);
     setCorrectStreak(0);
     setShowBoard(false);
     setResultHref(null);
+    setSubmitState("idle");
+    setSubmitError(null);
     freezeUntilRef.current = null;
     setFreezeLeft(0);
     setLast(pickStarter());
@@ -302,41 +314,65 @@ function ChainModeInner() {
   const postedRef = useRef(false);
   useEffect(() => {
     if (!started || !isOver) return;
-    if (postedRef.current) return;
-    postedRef.current = true;
+    if (postedRef.current) return; // guard
 
     const submit = async () => {
-      if (matchId) {
-        // Ranked result
-        try {
-          await fetch(`/api/ranked/${matchId}`, {
+      postedRef.current = true; // prevent duplicate attempts
+      setSubmitState("idle");
+      setSubmitError(null);
+
+      const headers = { "content-type": "application/json", "cache-control": "no-store" as const };
+
+      // helper to POST JSON with cookies
+      const postJson = (url: string, body: any) =>
+        fetch(url, {
+          method: "POST",
+          headers,
+          credentials: "include", // include session cookies for auth
+          body: JSON.stringify(body),
+        });
+
+      try {
+        // Ranked result (if applicable)
+        if (matchId) {
+          const r = await fetch(`/api/ranked/${matchId}`, {
             method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ chainLength: used.size, score }),
+            headers,
+            credentials: "include",
+            body: JSON.stringify({ chainLength, score }),
           });
-        } catch {}
-        // Also submit to Chain leaderboard
-        try {
-          await fetch("/api/chain/submit", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ score, longestChain: used.size }),
-          });
-        } catch {}
-        setResultHref(`/play/ranked/result?match=${matchId}`);
-      } else {
-        // Normal Chain leaderboard only
-        try {
-          await fetch("/api/chain/submit", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ score, longestChain: used.size }),
-          });
-        } catch {}
+          if (!r.ok) {
+            const msg = `Ranked submit failed: ${r.status} ${r.statusText}`;
+            console.warn(msg);
+            setSubmitState("error");
+            setSubmitError(msg);
+            return;
+          }
+        }
+
+        // Chain leaderboard submit (always try)
+        const r2 = await postJson("/api/chain/submit", { score, longestChain: chainLength });
+        if (!r2.ok) {
+          const msg = `Chain submit failed: ${r2.status} ${r2.statusText}`;
+          console.warn(msg);
+          setSubmitState("error");
+          setSubmitError(msg);
+          return;
+        }
+
+        // success
+        setSubmitState("success");
+        if (matchId) setResultHref(`/play/ranked/result?match=${matchId}`);
+      } catch (err: any) {
+        const msg = `Submit error: ${err?.message ?? String(err)}`;
+        console.warn(msg);
+        setSubmitState("error");
+        setSubmitError(msg);
       }
     };
+
     void submit();
-  }, [started, isOver, used.size, score, matchId]);
+  }, [started, isOver, chainLength, score, matchId]);
 
   /* ===================== Typing SFX ===================== */
   const onKeyDownSFX = useCallback(
@@ -387,6 +423,7 @@ function ChainModeInner() {
       return next;
     });
 
+    // Handle power charging + READY sfx
     setPowerCharges((prev) => {
       const nx = { ...prev };
       enteringCats.forEach((k) => {
@@ -397,7 +434,13 @@ function ChainModeInner() {
         const beforeTier = Math.floor(before / rule.threshold);
         const afterTier = Math.floor(after / rule.threshold);
         const gained = afterTier - beforeTier;
-        if (gained > 0) nx[k] = (nx[k] || 0) + gained;
+        if (gained > 0) {
+          nx[k] = (nx[k] || 0) + gained;
+          // play once per charge gained
+          try {
+            for (let i = 0; i < gained; i++) play(`power_${k}_ready`);
+          } catch {}
+        }
       });
       return nx;
     });
@@ -410,7 +453,8 @@ function ChainModeInner() {
     try { play("accept"); } catch {}
     try { vfx.ringBurstAtFromEl("input[name='word']"); } catch {}
 
-    setUsed((u) => new Set(u).add(wl));
+    setUsed((u) => new Set(u).add(wl)); // used set may be nuked later
+    setChainLength((n) => n + 1);       // true chain length (never nuked)
     setLast(w);
     setTimeLeft(15);
     nextCategory();
@@ -460,17 +504,21 @@ function ChainModeInner() {
     const rule = POWER_RULES[cat];
     if (!rule?.threshold || (powerCharges[cat] ?? 0) <= 0) return;
 
+    // consume a charge + USE sfx
     setPowerCharges((prev) => ({ ...prev, [cat]: Math.max(0, (prev[cat] || 0) - 1) }));
+    try { play(`power_${cat}_use`); } catch {}
 
     if (cat === "country") {
+      // NUKE: allow reusing words by clearing the "used" set
       setUsed(new Set());
       try { play("nuke"); } catch {}
       try { vfx.glowOnce("main"); } catch {}
     } else if (cat === "name") {
       const chosen = await pickAutoWordForCurrent();
       if (!chosen) {
+        // refund the charge
         setPowerCharges((prev) => ({ ...prev, [cat]: (prev[cat] || 0) + 1 }));
-        try { play("invalid"); } catch {}
+        try { play("lifeLost"); } catch {}
         try { vfx.shake(".rounded-2xl.border.p-5", 350); } catch {}
         return;
       }
@@ -532,13 +580,13 @@ function ChainModeInner() {
       const requiredStart = lastLetter(last).toLowerCase();
       if (w[0].toLowerCase() !== requiredStart) {
         breakStreak();
-        try { play("invalid"); } catch {}
+        try { play("lifeLost"); } catch {}
         try { vfx.shake("input[name='word']", 300); } catch {}
         return;
       }
       if (!w.toLowerCase().includes(firstLetter(last).toLowerCase())) {
         breakStreak();
-        try { play("invalid"); } catch {}
+        try { play("lifeLost"); } catch {}
         try { vfx.shake("input[name='word']", 300); } catch {}
         return;
       }
@@ -547,7 +595,7 @@ function ChainModeInner() {
     const cats = detectors.getCategories(w);
     if (!cats.has(category)) {
       breakStreak();
-      try { play("invalid"); } catch {}
+      try { play("lifeLost"); } catch {}
       try { vfx.glowOnce(".rounded-2xl.border.p-5"); } catch {}
       return;
     }
@@ -555,7 +603,7 @@ function ChainModeInner() {
     const ok = await validateWord(w);
     if (!ok) {
       breakStreak();
-      try { play("invalid"); } catch {}
+      try { play("lifeLost"); } catch {}
       try { vfx.shake("input[name='word']", 300); } catch {}
       return;
     }
@@ -650,7 +698,10 @@ function ChainModeInner() {
               <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Current Category</div>
               <div className="text-2xl font-bold">{CAT_LABELS[category]}</div>
               <div className="mt-2 text-sm opacity-70">
-                Last word:&nbsp;<span className="font-semibold">{last === "start" ? "—" : last}</span>
+                Last word:&nbsp;
+                <span className="font-semibold text-2xl leading-none">
+                  {last === "start" ? "—" : last}
+                </span>
               </div>
               {last !== "start" && (
                 <div className="mt-1 text-xs opacity-70">
@@ -711,7 +762,7 @@ function ChainModeInner() {
               </div>
             </div>
 
-            {/* Category progress grid */}
+            {/* Category progress grid (no numeric progress; show charges only) */}
             <div className="space-y-2">
               <div className="text-sm uppercase tracking-wide opacity-70">Category Powers</div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -737,13 +788,8 @@ function ChainModeInner() {
                       )}
                       <div className="relative z-10 flex items-center justify-between">
                         <div className="font-semibold">{CAT_LABELS[cat]}</div>
-                        {threshold ? (
-                          <div className="text-xs tabular-nums opacity-80">
-                            {prog} / {threshold}
-                          </div>
-                        ) : (
-                          <div className="text-xs opacity-60">No Power</div>
-                        )}
+                        {/* removed numeric progress display */}
+                        {!threshold && <div className="text-xs opacity-60">No Power</div>}
                       </div>
                       <div className="relative z-10 mt-2 flex items-center justify-between">
                         <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
@@ -752,7 +798,20 @@ function ChainModeInner() {
                             style={{ width: `${threshold ? pct : 0}%` }}
                           />
                         </div>
-                        <div className="ml-3 shrink-0">
+                        <div className="ml-3 shrink-0 flex items-center gap-2">
+                          {/* Charge count pill (active charges) */}
+                          {threshold && (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-xs tabular-nums ${
+                                charges > 0
+                                  ? "border-emerald-400 text-emerald-600 dark:border-emerald-300 dark:text-emerald-300"
+                                  : "border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400"
+                              }`}
+                              title="Charges available"
+                            >
+                              {charges}
+                            </span>
+                          )}
                           <button
                             className={`rounded-full px-3 py-1 text-xs font-semibold shadow ${
                               threshold && charges > 0
@@ -765,7 +824,7 @@ function ChainModeInner() {
                               threshold
                                 ? (charges > 0
                                   ? `Use ${POWER_RULES[cat].label} (${charges})`
-                                  : `Fill ${threshold} in ${CAT_LABELS[cat]} to unlock ${POWER_RULES[cat].label}`)
+                                  : `${POWER_RULES[cat].label} locked`)
                                 : "No power configured"
                             }
                           >
@@ -778,7 +837,7 @@ function ChainModeInner() {
                 })}
               </div>
               <div className="text-xs opacity-70">
-                Countries(5) → <b>Nuke</b>; Names(5) → <b>ChatGPT</b>; Foods(3) → <b>Letter Roll</b>; TV/Movies(3) → <b>Time Freeze</b>; Brands(3) → <b>Influencer (+3 Base)</b>; Animals(3) → <b>Beast Mode (+1 Base)</b>.
+                Countries(5) → <b>Nuke</b>; Names(5) → <b>ChatGPT</b>; Foods(3) → <b>Letter Roll</b>; TV/Movies(6) → <b>Time Freeze</b>; Brands(3) → <b>Influencer (+3 Base)</b>; Animals(3) → <b>Beast Mode (+1 Base)</b>.
               </div>
             </div>
           </div>
@@ -788,12 +847,23 @@ function ChainModeInner() {
         {isOver && (
           <div className="rounded-2xl border p-6 text-center bg-white/80 border-gray-200 dark:bg-slate-900/80 dark:border-slate-700">
             <h2 className="mb-1 text-xl font-bold">Run Over</h2>
-            <p className="opacity-80">{matchId ? "Your ranked result has been submitted." : "Your score has been submitted."}</p>
+
+            {/* Submit status */}
+            {submitState === "success" && (
+              <p className="opacity-80">Your score has been submitted.</p>
+            )}
+            {submitState !== "success" && (
+              <p className="opacity-80">
+                {submitState === "error"
+                  ? `Could not submit score${submitError ? ` — ${submitError}` : ""}.`
+                  : "Final score recorded locally."}
+              </p>
+            )}
 
             <div className="mx-auto mt-4 grid max-w-md grid-cols-2 gap-4 text-left">
               <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-                <div className="text-xs uppercase tracking-wide opacity-70">Words Played</div>
-                <div className="text-2xl font-bold tabular-nums">{used.size}</div>
+                <div className="text-xs uppercase tracking-wide opacity-70">Chain Length</div>
+                <div className="text-2xl font-bold tabular-nums">{chainLength}</div>
               </div>
               <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
                 <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
