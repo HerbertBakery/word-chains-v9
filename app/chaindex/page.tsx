@@ -105,6 +105,21 @@ function singularize(w: string) {
   return w;
 }
 
+/** Normalize movie/TV titles like "Matrix, The (1999)" → "The Matrix" */
+function normalizeScreenTitle(title: string) {
+  let t = title.trim();
+
+  // Move trailing article: "Title, The" / "Title, A" / "Title, An" → "The/A/An Title"
+  const m = t.match(/^(.*),\s*(The|A|An)$/i);
+  if (m) t = `${m[2]} ${m[1]}`;
+
+  // Strip trailing year: " (1999)"
+  t = t.replace(/\s*\(\d{4}\)\s*$/, "");
+
+  // Collapse extra spaces
+  return t.replace(/\s+/g, " ").trim();
+}
+
 /** Map any array (strings or objects) to strings */
 function mapItemsToStrings(cat: TopCat, arr: any[]): string[] {
   const pick = (it: any): string | null => {
@@ -152,7 +167,7 @@ async function fetchToplist(cat: TopCat): Promise<string[]> {
       const json = await res.json();
       const arr = pickArrayFromJson(json, cat);
       if (!arr) continue;
-      const clean = Array.from(
+      let clean = Array.from(
         new Set(
           arr
             .filter((x) => typeof x === "string")
@@ -160,6 +175,12 @@ async function fetchToplist(cat: TopCat): Promise<string[]> {
             .filter(Boolean)
         )
       );
+
+      // ✅ Normalize movie/TV titles so discovered keys match tiles
+      if (cat === "screen") {
+        clean = Array.from(new Set(clean.map(normalizeScreenTitle)));
+      }
+
       if (clean.length) {
         // Helpful one-liner while debugging
         console.log(`[ChainDex] Loaded ${clean.length} for "${cat}" from ${url}`);

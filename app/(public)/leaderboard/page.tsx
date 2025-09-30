@@ -50,7 +50,8 @@ const fmtTime = (s?: number | null) => (typeof s === "number" && isFinite(s) ? `
 
 /* ===================== Page with tabs ===================== */
 export default function LeaderboardTabsPage() {
-  const [tab, setTab] = useState<"main" | "daily" | "chain" | "ladder">("main");
+  // Default to Daily/Puzzle tab
+  const [tab, setTab] = useState<"main" | "daily" | "chain" | "ladder">("daily");
 
   return (
     <div className="space-y-6">
@@ -59,16 +60,7 @@ export default function LeaderboardTabsPage() {
         <h1 className="text-2xl font-bold">Leaderboard</h1>
 
         <div className="inline-flex rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-800 dark:bg-neutral-900">
-          <button
-            className={`px-3 py-1.5 text-sm rounded-lg transition ${
-              tab === "main"
-                ? "bg-black text-white dark:bg-white dark:text-black"
-                : "text-neutral-700 dark:text-neutral-300"
-            }`}
-            onClick={() => setTab("main")}
-          >
-            Global
-          </button>
+          {/* Order: Puzzle, Chain, Ladder, Free Play */}
           <button
             className={`px-3 py-1.5 text-sm rounded-lg transition ${
               tab === "daily"
@@ -99,6 +91,16 @@ export default function LeaderboardTabsPage() {
           >
             Ladder
           </button>
+          <button
+            className={`px-3 py-1.5 text-sm rounded-lg transition ${
+              tab === "main"
+                ? "bg-black text-white dark:bg-white dark:text-black"
+                : "text-neutral-700 dark:text-neutral-300"
+            }`}
+            onClick={() => setTab("main")}
+          >
+            Free Play
+          </button>
         </div>
       </div>
 
@@ -116,7 +118,7 @@ export default function LeaderboardTabsPage() {
 }
 
 /* ===================================================================== */
-/* ========================= GLOBAL (Main) TAB ========================== */
+/* ========================= FREE PLAY (Main) TAB ======================= */
 /* ===================================================================== */
 
 const METRICS = [
@@ -179,9 +181,9 @@ function MainLeaderboard() {
   return (
     <>
       <div className="space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items=end sm:justify-between">
           <div>
-            <h2 className="text-xl font-bold">Global Leaderboard</h2>
+            <h2 className="text-xl font-bold">Free Play Leaderboard</h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400">Click a player to view their profile & full stats.</p>
           </div>
           <label className="sm:w-80">
@@ -336,7 +338,7 @@ function UserModal({ userId, onClose }: { userId: string; onClose: () => void })
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-white/5">
+    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg:white/5 dark:bg-white/5">
       <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
       <div className="font-semibold">{value}</div>
     </div>
