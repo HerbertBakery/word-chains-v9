@@ -42,27 +42,19 @@ const DATA_URL = {
 
 // LIMITS for toplists (slice after loading)
 const LIMIT: Partial<Record<Tab, number>> = {
-  screen_top250: 1000, // show all 1000 movies
+  screen_top250: 1000,
   brand_top250: 250,
   food_top250: 250,
-  name_top1000: 1000, // show all 1000 names
+  name_top1000: 1000,
 };
 
 /** ---------- toplist loader (files are in /public/toplists) ---------- */
 type TopCat = "screen" | "brand" | "food" | "name";
 
-/**
- * Use ONLY the filenames you actually have to stop 404 spam.
- * (You can add more variants later if you add more files.)
- */
 function candidatesFor(cat: TopCat): string[] {
-  if (cat === "name") {
-    return ["/toplists/names_top_1000.json"];
-  }
-  if (cat === "screen") {
-    return ["/toplists/screen_top_1000.json"];
-  }
-  if (cat === "brand") {
+  if (cat === "name") return ["/toplists/names_top_1000.json"];
+  if (cat === "screen") return ["/toplists/screen_top_1000.json"];
+  if (cat === "brand")
     return [
       "/toplists/brands_top_1000.json",
       "/toplists/brand_top_1000.json",
@@ -71,7 +63,6 @@ function candidatesFor(cat: TopCat): string[] {
       "/toplists/brands.json",
       "/toplists/brand.json",
     ];
-  }
   // food
   return [
     "/toplists/foods_top_1000.json",
@@ -108,15 +99,9 @@ function singularize(w: string) {
 /** Normalize movie/TV titles like "Matrix, The (1999)" → "The Matrix" */
 function normalizeScreenTitle(title: string) {
   let t = title.trim();
-
-  // Move trailing article: "Title, The" / "Title, A" / "Title, An" → "The/A/An Title"
   const m = t.match(/^(.*),\s*(The|A|An)$/i);
   if (m) t = `${m[2]} ${m[1]}`;
-
-  // Strip trailing year: " (1999)"
   t = t.replace(/\s*\(\d{4}\)\s*$/, "");
-
-  // Collapse extra spaces
   return t.replace(/\s+/g, " ").trim();
 }
 
@@ -125,9 +110,6 @@ function mapItemsToStrings(cat: TopCat, arr: any[]): string[] {
   const pick = (it: any): string | null => {
     if (typeof it === "string") return it;
     if (it && typeof it === "object") {
-      // common fields across datasets
-      // screen: title | name | label
-      // others: name | title | label
       const v =
         (cat === "screen"
           ? it.title ?? it.name ?? it.label
@@ -151,7 +133,6 @@ function pickArrayFromJson(parsed: any, cat: TopCat): string[] | null {
   for (const k of candidates) {
     if (k in parsed && Array.isArray(parsed[k])) return mapItemsToStrings(cat, parsed[k]);
   }
-  // Fall back to first array-like field
   for (const v of Object.values(parsed)) {
     if (Array.isArray(v)) return mapItemsToStrings(cat, v);
   }
@@ -175,20 +156,12 @@ async function fetchToplist(cat: TopCat): Promise<string[]> {
             .filter(Boolean)
         )
       );
-
-      // ✅ Normalize movie/TV titles so discovered keys match tiles
-      if (cat === "screen") {
-        clean = Array.from(new Set(clean.map(normalizeScreenTitle)));
-      }
-
+      if (cat === "screen") clean = Array.from(new Set(clean.map(normalizeScreenTitle)));
       if (clean.length) {
-        // Helpful one-liner while debugging
         console.log(`[ChainDex] Loaded ${clean.length} for "${cat}" from ${url}`);
         return clean;
       }
-    } catch {
-      // try next
-    }
+    } catch {}
   }
   console.warn(`[ChainDex] No toplist found for "${cat}". Tried:`, urls);
   return [];
@@ -437,10 +410,7 @@ export default function ChainDexPage() {
           const r = await fetch(url, { cache: "no-store" });
           if (!r.ok) return [];
           const j = await r.json();
-          if (Array.isArray(j)) {
-            // animals/countries are arrays of strings or {name:..}
-            return mapItemsToStrings("name", j); // same mapping works for both
-          }
+          if (Array.isArray(j)) return mapItemsToStrings("name", j);
           const arrField =
             (Array.isArray(j?.animals) && j.animals) ||
             (Array.isArray(j?.countries) && j.countries) ||
@@ -507,7 +477,7 @@ export default function ChainDexPage() {
     reloadProgress();
   }, [reloadProgress]);
 
-  // Totals
+  // Totals (unchanged)
   const totals = useMemo(() => {
     const per = {} as Record<Tab, { total: number; discovered: number; claimed: number }>;
     for (const t of TABS) {
@@ -520,6 +490,22 @@ export default function ChainDexPage() {
     const total = TABS.reduce((acc, t) => acc + per[t].total, 0);
     const found = TABS.reduce((acc, t) => acc + per[t].claimed, 0);
     return { per, total, found };
+  }, [data, discovered, claimed]);
+
+  /** ---------- Derived: clickable counts per tab (visible & unclaimed) ---------- */
+  const clickableCount: Record<Tab, number> = useMemo(() => {
+    const out = {} as Record<Tab, number>;
+    for (const t of TABS) {
+      const visible = new Set((data[t] ?? []).map((w) => normKey(w)));
+      const disc = discovered[t] ?? new Set<string>();
+      const clm = claimed[t] ?? new Set<string>();
+      let n = 0;
+      disc.forEach((k) => {
+        if (visible.has(k) && !clm.has(k)) n++;
+      });
+      out[t] = n;
+    }
+    return out;
   }, [data, discovered, claimed]);
 
   // Claim handler (server-only)
@@ -554,12 +540,46 @@ export default function ChainDexPage() {
         });
         // Re-sync from server
         reloadProgress();
-      } catch {
-        // ignore; user can retry
-      }
+      } catch {}
     },
     [discovered, claimed, reloadProgress]
   );
+
+  /** ---------- Jump helpers ---------- */
+  const scrollToTop = useCallback(() => {
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
+  }, []);
+
+  const scrollToNextUnlock = useCallback(() => {
+    try {
+      const sel = `button[data-tab="${active}"][data-clickable="1"]`;
+      const nodes = Array.from(document.querySelectorAll<HTMLButtonElement>(sel));
+      if (!nodes.length) return;
+
+      const currY = window.scrollY || document.documentElement.scrollTop || 0;
+      // Pick the closest button whose top is at/after current scroll; else fallback to the first
+      let best: HTMLButtonElement | null = null;
+      let bestDelta = Number.POSITIVE_INFINITY;
+      for (const el of nodes) {
+        const top = el.getBoundingClientRect().top + currY;
+        const delta = top - currY;
+        if (delta >= -20 && delta < bestDelta) {
+          best = el;
+          bestDelta = delta;
+        }
+      }
+      if (!best) best = nodes[0];
+
+      best.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Temporary highlight
+      best.classList.add("ring-4", "ring-amber-300", "ring-offset-2", "ring-offset-transparent");
+      setTimeout(() => {
+        best && best.classList.remove("ring-4", "ring-amber-300", "ring-offset-2", "ring-offset-transparent");
+      }, 900);
+      // Subtle focus for accessibility
+      setTimeout(() => { try { best?.focus(); } catch {} }, 350);
+    } catch {}
+  }, [active]);
 
   /** ---------- Tile Grid (shared) ---------- */
   const Grid: React.FC<{ tab: Tab }> = ({ tab }) => {
@@ -588,6 +608,9 @@ export default function ChainDexPage() {
           return (
             <button
               key={`${tab}:${w}`}
+              data-tab={tab}
+              data-key={key}
+              data-clickable={isClickableToClaim ? "1" : "0"}
               className={[
                 "group relative aspect-square overflow-hidden rounded-2xl border text-left transition",
                 tilePad,
@@ -655,6 +678,28 @@ export default function ChainDexPage() {
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">ChainDex</h1>
+          <div className="mt-2 flex gap-2">
+            {/* Header quick action: Next Unlock (keep) */}
+            <button
+              onClick={scrollToNextUnlock}
+              disabled={clickableCount[active] === 0}
+              className={[
+                "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition shadow",
+                clickableCount[active] > 0
+                  ? "bg-amber-500 text-white hover:bg-amber-600"
+                  : "bg-neutral-200 text-neutral-500 dark:bg-slate-800 dark:text-slate-400 cursor-not-allowed",
+              ].join(" ")}
+              title={clickableCount[active] > 0 ? "Jump to next unlock" : "No unlocks in this tab"}
+            >
+              <span>Next Unlock</span> <span>✨</span>
+              {clickableCount[active] > 0 && (
+                <span className="ml-1 rounded-full bg-white/20 px-2 py-0.5 text-xs tabular-nums shadow-inner">
+                  {clickableCount[active]}
+                </span>
+              )}
+            </button>
+            {/* (Removed header Top button per request) */}
+          </div>
         </div>
         <div className="text-sm">
           <div className="rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-900/50">
@@ -669,20 +714,33 @@ export default function ChainDexPage() {
         {TABS.map((t) => {
           const is = active === t;
           const stats = totals.per[t];
+          const unlocks = clickableCount[t];
           return (
             <button
               key={t}
               onClick={() => setActive(t)}
               className={[
-                "rounded-xl border px-3 py-2 text-sm font-medium transition",
+                "relative rounded-xl border px-3 py-2 text-sm font-medium transition",
                 is
                   ? "bg-black text-white dark:bg-white dark:text-black"
                   : "bg-white/70 hover:bg-white dark:bg-slate-900/60 dark:hover:bg-slate-900/80 border-neutral-200 dark:border-slate-700",
               ].join(" ")}
             >
-              {LABEL[t]}
-              <span className="ml-2 text-xs opacity-80">
-                {stats.claimed}/{stats.total}
+              <span className="flex items-center gap-2">
+                <span>{LABEL[t]}</span>
+                <span className="text-xs opacity-80">
+                  {stats.claimed}/{stats.total}
+                </span>
+                {unlocks > 0 && (
+                  <span
+                    className="ml-1 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold
+                               text-amber-900 bg-amber-300/90 shadow
+                               ring-2 ring-amber-300/70 animate-pulse"
+                    title={`${unlocks} unlock${unlocks === 1 ? "" : "s"} available`}
+                  >
+                    {unlocks}
+                  </span>
+                )}
               </span>
             </button>
           );
@@ -693,10 +751,7 @@ export default function ChainDexPage() {
       <div className="rounded-2xl border p-4 dark:border-slate-700 dark:bg-slate-900/50">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{LABEL[active]}</h2>
-          <div className="text-xs text-neutral-500 dark:text-neutral-400">
-            Claimed: {totals.per[active].claimed} · Discovered: {totals.per[active].discovered} · Total:{" "}
-            {totals.per[active].total}
-          </div>
+          {/* (Removed Claimed · Discovered · Total text per request) */}
         </div>
         <Grid tab={active} />
       </div>
@@ -705,6 +760,39 @@ export default function ChainDexPage() {
         <Link href="/play" className="underline">
           Back to Play
         </Link>
+      </div>
+
+      {/* Floating actions */}
+      <div className="fixed bottom-6 right-6 z-[60] flex flex-col items-end gap-3">
+        <button
+          onClick={scrollToNextUnlock}
+          disabled={clickableCount[active] === 0}
+          className={[
+            "relative inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold shadow-lg transition",
+            clickableCount[active] > 0
+              ? "bg-amber-500 text-white hover:bg-amber-600"
+              : "bg-neutral-300 text-neutral-600 dark:bg-slate-700 dark:text-slate-400 cursor-not-allowed",
+          ].join(" ")}
+          title={clickableCount[active] > 0 ? "Go to next unlock" : "No unlocks in this tab"}
+        >
+          <span>Next Unlock</span>
+          {clickableCount[active] > 0 && (
+            <>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs tabular-nums">{clickableCount[active]}</span>
+              <span aria-hidden>✨</span>
+              <span className="pointer-events-none absolute -inset-1 rounded-full ring-2 ring-amber-300/40 animate-pulse" />
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={scrollToTop}
+          className="inline-flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-90 dark:bg-white dark:text-neutral-900"
+          title="Back to top"
+        >
+          <span>Top</span>
+          <span aria-hidden>⬆️</span>
+        </button>
       </div>
     </main>
   );
