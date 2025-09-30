@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import AuthGate from "./AuthGate";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import WordCoinsBadge from "@/app/components/WordCoinsBadge";
 
 /* ==================== Dark Mode Toggle ==================== */
 function ThemeToggle() {
@@ -47,7 +48,7 @@ const NAV = [
   { href: "/", label: "Home" },
   { href: "/play", label: "Play" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/stats", label: "Stats" },
+  { href: "/chaindex", label: "ChainDex" }, // ← renamed from Stats
   { href: "/rules", label: "Rules" },
 ];
 
@@ -185,6 +186,8 @@ export default function Header() {
         <div className="flex items-center gap-2">
           {/* Live pieces counter (🧩) */}
           <PiecesBadge />
+          {/* NEW: WordCoins (🪙) */}
+          <WordCoinsBadge />
           <ThemeToggle />
           <AuthGate compact />
         </div>

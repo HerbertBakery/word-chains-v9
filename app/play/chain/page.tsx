@@ -21,6 +21,8 @@ import {
 
 import { prngFromSeed } from "@/lib/seed";
 import ChainLeaderboard from "./ChainLeaderboard";
+import { recordDiscovery } from "@/lib/chaindex";
+import type { DexCat } from "@/lib/chaindex"; // ← added type-only import
 
 /* ===================== Constants ===================== */
 const CHAIN_BASE = {
@@ -76,6 +78,16 @@ const POWER_RULES: Record<ChainKey, PowerRule> = {
   screen: { threshold: 6, label: "Time Freeze" }, // ← updated to 6
   brand: { threshold: 3, label: "Influencer" },
   animal: { threshold: 3, label: "Beast Mode" },
+};
+
+/** Map Chain categories → Dex categories for discovery (fix) */
+const CHAIN_TO_DEX: Record<ChainKey, DexCat> = {
+  name: "name",
+  animal: "animal",
+  country: "country",
+  food: "food",
+  brand: "brand",
+  screen: "screen",
 };
 
 /* ===================== Inner component (uses useSearchParams) ===================== */
@@ -407,6 +419,7 @@ function ChainModeInner() {
     nextCategory();
     setTimeLeft(15);
   }, [isOver, started, skips, play, pickStarter, nextCategory]);
+
   const applyAcceptedWord = useCallback((w: string) => {
     const wl = w.toLowerCase();
 
@@ -446,6 +459,15 @@ function ChainModeInner() {
     const base = catsArr.length ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1)) : CHAIN_BASE.normal;
     const gainedPoints = Math.round(w.length * base * totalMult * Math.max(1, basePowerMult));
     setScore((s) => s + gainedPoints);
+
+    // 🔎 Record discovery for ALL relevant categories (fix)
+    try {
+      const dexCats = new Set<DexCat>();
+      enteringCats.forEach((k) => dexCats.add(CHAIN_TO_DEX[k]));
+      if (dexCats.size) {
+        void recordDiscovery({ word: w, categories: dexCats });
+      }
+    } catch {}
 
     try { play("accept"); } catch {}
     try { vfx.ringBurstAtFromEl("input[name='word']"); } catch {}
@@ -786,7 +808,6 @@ function ChainModeInner() {
                       )}
                       <div className="relative z-10 flex items-center justify-between">
                         <div className="font-semibold">{CAT_LABELS[cat]}</div>
-                        {/* removed numeric progress display */}
                         {!threshold && <div className="text-xs opacity-60">No Power</div>}
                       </div>
                       <div className="relative z-10 mt-2 flex items-center justify-between">

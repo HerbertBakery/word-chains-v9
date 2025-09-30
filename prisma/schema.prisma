@@ -39,6 +39,14 @@ model User {
   // NEW (fix Prisma validation): opposite relation fields
   rankedRating RankedRating?
   ladderTicket LadderTicket?
+
+  // ChainDex relations (ADDED earlier)
+  dexUnlocks     DexUnlock[]
+  dexDiscoveries DexDiscovery[]
+
+  // WordCoins (ADDED now)
+  wordcoinWallet  WordcoinWallet?
+  wordcoinTxns    WordcoinTxn[]
 }
 
 model Account {
@@ -294,4 +302,59 @@ model RankedMatch {
 
   @@index([createdAt])
   @@index([completedAt]) // ← added
+}
+
+/**
+ * ========= ChainDex progress (present) =========
+ * - DexUnlock: claimed entries (authoritative “owned” state)
+ * - DexDiscovery: discovered-but-not-claimed entries (for glow)
+ */
+model DexUnlock {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String // "animal" | "country" | "screen" | "brand" | "food" | "name"
+  key       String // normalized lowercase/trim/diacritics-stripped
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, key], name: "userId_category_key")
+  @@index([userId, category])
+}
+
+model DexDiscovery {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String // "animal" | "country" | "screen" | "brand" | "food" | "name"
+  key       String // normalized lowercase/trim/diacritics-stripped
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, key], name: "userId_category_key_discovery")
+  @@index([userId, category])
+}
+
+/**
+ * ========= WordCoins (ADDED NOW) =========
+ * - WordcoinWallet: one row per user with current balance
+ * - WordcoinTxn: append-only ledger of all grants/spends
+ */
+model WordcoinWallet {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model WordcoinTxn {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Int
+  reason    Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt], name: "idx_wc_user_created")
 }
