@@ -1,28 +1,52 @@
-// lib/game/shared.ts
-// Extracted from your existing Free Play page so both modes use the same rules.
+// Shared helpers for Chain rules
 
 export type ChainKey = "name" | "animal" | "country" | "food" | "brand" | "screen";
 
+// Must start with a letter; rest can include letters/spaces/'/&/-/.
 export const INPUT_RE = /^[a-zA-Z][a-zA-Z\s'\-&.]*$/;
-export const lastLetter = (w: string) => w[w.length - 1];
-export const firstLetter = (w: string) => w[0];
-export const stripDiacritics = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+export const stripDiacritics = (s: string) =>
+  s.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+
+// Normalization for detectors
 export const norm = (s: string) =>
   stripDiacritics(s)
     .toLowerCase()
     .replace(/[™®©]/g, "")
     .replace(/[\s'\-&.]/g, "");
+
 export const singularize = (w: string) => {
   if (w.endsWith("ies")) return w.slice(0, -3) + "y";
   if (w.endsWith("es")) return w.slice(0, -2);
   if (w.endsWith("s")) return w.slice(0, -1);
   return w;
 };
+
 export const stripCorpSuffixes = (s: string) =>
   s
     .replace(/\b(company|co|corp|corporation|inc|incorporated|ltd|limited|llc|plc|ag|sa|gmbh)\b\.?/gi, "")
     .replace(/\b(the)\b/gi, "")
     .trim();
+
+/** Find first alphabetic letter (ASCII) scanning forward; fallback to first char */
+export const firstLetter = (w: string) => {
+  const plain = stripDiacritics(String(w));
+  for (let i = 0; i < plain.length; i++) {
+    const ch = plain[i];
+    if (/[A-Za-z]/.test(ch)) return ch;
+  }
+  return plain[0] ?? "";
+};
+
+/** Find last alphabetic letter (ASCII) scanning backward; fallback to last char */
+export const lastLetter = (w: string) => {
+  const plain = stripDiacritics(String(w));
+  for (let i = plain.length - 1; i >= 0; i--) {
+    const ch = plain[i];
+    if (/[A-Za-z]/.test(ch)) return ch;
+  }
+  return plain[plain.length - 1] ?? "";
+};
 
 export function isAnimal(animals: Set<string>, w: string) {
   if (animals.has(w)) return true;

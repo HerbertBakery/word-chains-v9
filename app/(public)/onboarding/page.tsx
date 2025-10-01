@@ -1,13 +1,19 @@
+// app/(public)/onboarding/page.tsx
 "use client";
 
 import * as React from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { normalizeUsername, validateUsername, USERNAME_MIN, USERNAME_MAX } from "@/lib/username";
+import {
+  normalizeUsername,
+  validateUsername,
+  USERNAME_MIN,
+  USERNAME_MAX,
+} from "@/lib/username";
 
 export default function OnboardingPage() {
-  const { data, status, update } = useSession(); // added `update`
-  const user = (data?.user as any);
+  const { data, status, update } = useSession();
+  const user = data?.user as any;
   const router = useRouter();
 
   const [raw, setRaw] = React.useState("");
@@ -15,13 +21,25 @@ export default function OnboardingPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [hint, setHint] = React.useState<string | null>(null);
 
+  // Gate & routing:
+  // - If not logged in -> /login
+  // - If logged in and has username -> homepage
+  // - Else -> show username form
   React.useEffect(() => {
     if (status === "loading") return;
-    if (!user) router.push("/login");
-    if (user?.username) router.push("/leaderboard");
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    if (user?.username) {
+      router.push("/"); // ← go to homepage if username already set
+      return;
+    }
   }, [status, user, router]);
 
-  // live validation as user types
+  // Live validation hint
   React.useEffect(() => {
     const v = validateUsername(raw);
     setHint(v.ok ? null : v.reason);
@@ -38,9 +56,11 @@ export default function OnboardingPage() {
       setError(v.reason);
       return;
     }
+
     const username = normalizeUsername(raw);
 
     try {
+      // Save username
       const res = await fetch("/api/user/username", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -51,12 +71,13 @@ export default function OnboardingPage() {
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
 
-      // NEW: instantly sync session so Header reflects the new username without a reload
+      // Update session so header/UI reflects new username immediately
       await update({ username });
 
-      router.push("/leaderboard");
+      // Done → homepage
+      router.push("/");
     } catch (err: any) {
-      setError(err.message || "Failed to save username.");
+      setError(err?.message || "Failed to save username.");
     } finally {
       setSaving(false);
     }
@@ -69,7 +90,6 @@ export default function OnboardingPage() {
         This will appear on the global leaderboard and your public profile.
       </p>
 
-      {/* noValidate = avoid the browser's vague "match the requested format" popup */}
       <form onSubmit={submit} noValidate className="space-y-3">
         <input
           type="text"
@@ -82,7 +102,6 @@ export default function OnboardingPage() {
             w-full rounded-xl px-3 py-2 text-sm
             border border-neutral-300 bg-white text-neutral-900 placeholder-neutral-400
             focus:outline-none focus:ring-2 focus:ring-neutral-500
-
             dark:bg-neutral-800 dark:text-neutral-100 dark:placeholder-neutral-400 dark:border-neutral-700
             dark:focus:ring-neutral-300
           "

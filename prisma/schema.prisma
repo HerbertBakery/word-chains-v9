@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -47,6 +46,11 @@ model User {
   // WordCoins (ADDED now)
   wordcoinWallet  WordcoinWallet?
   wordcoinTxns    WordcoinTxn[]
+
+  // ==== NEW: Cards / Deck / Purchases ====
+  wordCards      WordCard[]
+  deckSlots      DeckSlot[]
+  packPurchases  PackPurchase[]
 }
 
 model Account {
@@ -216,7 +220,7 @@ model DailyPiece {
 model ChainRun {
   id         String   @id @default(cuid())
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt  // 👈 add @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
 
   userId     String?
   deviceId   String?
@@ -248,7 +252,7 @@ model RankedRating {
   draws     Int      @default(0)
   updatedAt DateTime @updatedAt
 
-  @@index([rating, updatedAt], name: "idx_rating_updatedAt") // ← added
+  @@index([rating, updatedAt], name: "idx_rating_updatedAt")
 }
 
 model LadderTicket {
@@ -264,8 +268,8 @@ model LadderTicket {
 }
 
 enum RankedKind {
-  DUEL   // Play a Friend
-  LADDER // Elo matchmaking
+  DUEL
+  LADDER
 }
 
 /**
@@ -277,23 +281,19 @@ model RankedMatch {
   seed      String
   createdAt DateTime @default(now())
 
-  // match flavor (friend duel vs ladder)
   kind RankedKind @default(DUEL)
 
-  // Players
   playerOneId String
   playerOne   User   @relation("RankedPlayerOne", fields: [playerOneId], references: [id])
 
   playerTwoId String?
   playerTwo   User?  @relation("RankedPlayerTwo", fields: [playerTwoId], references: [id])
 
-  // Results
   playerOneChainLength Int?
   playerOneScore       Int?
   playerTwoChainLength Int?
   playerTwoScore       Int?
 
-  // Elo deltas (only for LADDER matches)
   ratingDeltaOne Int?
   ratingDeltaTwo Int?
 
@@ -301,19 +301,17 @@ model RankedMatch {
   completedAt DateTime?
 
   @@index([createdAt])
-  @@index([completedAt]) // ← added
+  @@index([completedAt])
 }
 
 /**
  * ========= ChainDex progress (present) =========
- * - DexUnlock: claimed entries (authoritative “owned” state)
- * - DexDiscovery: discovered-but-not-claimed entries (for glow)
  */
 model DexUnlock {
   id        String   @id @default(cuid())
   userId    String
-  category  String // "animal" | "country" | "screen" | "brand" | "food" | "name"
-  key       String // normalized lowercase/trim/diacritics-stripped
+  category  String
+  key       String
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -325,8 +323,8 @@ model DexUnlock {
 model DexDiscovery {
   id        String   @id @default(cuid())
   userId    String
-  category  String // "animal" | "country" | "screen" | "brand" | "food" | "name"
-  key       String // normalized lowercase/trim/diacritics-stripped
+  category  String
+  key       String
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -336,9 +334,7 @@ model DexDiscovery {
 }
 
 /**
- * ========= WordCoins (ADDED NOW) =========
- * - WordcoinWallet: one row per user with current balance
- * - WordcoinTxn: append-only ledger of all grants/spends
+ * ========= WordCoins =========
  */
 model WordcoinWallet {
   userId    String   @id
@@ -357,4 +353,63 @@ model WordcoinTxn {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt], name: "idx_wc_user_created")
+}
+
+/**
+ * ========= Cards / Deck / Purchases (NEW) =========
+ */
+
+enum CardRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+enum CardCategory {
+  name
+  animal
+  country
+  food
+  brand
+  screen
+}
+
+model WordCard {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word      String
+  category  CardCategory
+  rarity    CardRarity
+  createdAt DateTime     @default(now())
+
+  deckSlots DeckSlot[]
+  @@index([userId, createdAt])
+}
+
+model DeckSlot {
+  id        String    @id @default(cuid())
+  userId    String
+  slotIndex Int
+  cardId    String?
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card WordCard? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, slotIndex], name: "userId_slotIndex")
+  @@index([userId])
+}
+
+model PackPurchase {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packId       String
+  coinsSpent   Int      @default(0)
+  piecesSpent  Int      @default(0)
+  cardsGranted Json
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

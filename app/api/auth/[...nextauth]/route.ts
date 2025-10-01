@@ -9,27 +9,49 @@ const handler = NextAuth({
   callbacks: {
     ...base.callbacks,
 
-    // Ensure JWT carries id + username, and supports live session.update({ username })
+    // === Force users to hit /onboarding after OAuth completes ===
+    async redirect({ url, baseUrl }) {
+      // Allow same-origin absolute URLs
+      try {
+        const dest = new URL(url, baseUrl); // handles relative urls too
+
+        // If NextAuth would otherwise send the user to the site root,
+        // send them to /onboarding instead. Your onboarding page then
+        // decides whether to show the username form or bounce to /packs.
+        if (dest.origin === baseUrl && (dest.pathname === "/" || dest.pathname === "")) {
+          return `${baseUrl}/onboarding`;
+        }
+
+        // Keep relative paths working (e.g. callbackUrl=/packs)
+        if (url.startsWith("/")) return `${baseUrl}${url}`;
+
+        // Same-origin absolute URLs are fine as-is
+        if (dest.origin === baseUrl) return dest.toString();
+
+        // Fallback: always bring them to onboarding
+        return `${baseUrl}/onboarding`;
+      } catch {
+        // If URL parsing fails, be safe and land on onboarding
+        return `${baseUrl}/onboarding`;
+      }
+    },
+
+    // === Your existing JWT callback (kept intact) ===
     async jwt(args) {
-      // Run your existing jwt callback first (if any)
       const baseToken = base.callbacks?.jwt
         ? await base.callbacks.jwt(args as any)
         : args.token;
 
       const token: any = baseToken ?? {};
 
-      // Preserve your existing behavior: ensure id on JWT
       if (args.user?.id) {
         token.id = (args.user as any).id;
       }
 
-      // On sign-in, copy username from the user record into the token
       if (args.user && (args.user as any).username) {
         token.username = (args.user as any).username;
       }
 
-      // Support client-side live updates:
-      // await update({ username }) will arrive here with trigger === "update"
       if (args.trigger === "update" && (args.session as any)?.username) {
         token.username = (args.session as any).username;
       }
@@ -37,9 +59,8 @@ const handler = NextAuth({
       return token;
     },
 
-    // Ensure session.user has id + username, so Header updates instantly
+    // === Your existing session callback (kept intact) ===
     async session(args) {
-      // Run your existing session callback first (if any)
       const session = base.callbacks?.session
         ? await base.callbacks.session(args as any)
         : args.session;
@@ -47,11 +68,9 @@ const handler = NextAuth({
       const t: any = args.token as any;
 
       if (session?.user) {
-        // Preserve your existing id propagation
         (session.user as any).id =
           t?.id ?? args.token?.sub ?? (session.user as any).id;
 
-        // NEW: expose username from token on the session
         (session.user as any).username =
           t?.username ?? (session.user as any).username ?? null;
       }

@@ -48,8 +48,10 @@ const NAV = [
   { href: "/", label: "Home" },
   { href: "/play", label: "Play" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/chaindex", label: "ChainDex" }, // ← renamed from Stats
-  { href: "/rules", label: "Rules" },
+  { href: "/chaindex", label: "ChainDex" },
+  // Changed from "Word Bank" → "WordBank"
+  { href: "/word-bank", label: "WordBank" },
+  { href: "/packs", label: "Packs" },
 ];
 
 /* ==================== Pieces badge (live) ==================== */
@@ -142,15 +144,36 @@ export default function Header() {
   const pathname = usePathname();
   const { status } = useSession();
 
-  // After login, claim any guest win for today, then refresh pieces.
+  // Force-remount the WordCoinsBadge whenever we need to refresh coins.
+  // This assumes WordCoinsBadge fetches on mount.
+  const [coinsTick, setCoinsTick] = useState(0);
+
+  useEffect(() => {
+    const refreshCoins = () => setCoinsTick((t) => t + 1);
+
+    // Fired explicitly by purchase flows
+    window.addEventListener("wc:coins:refresh", refreshCoins);
+    window.addEventListener("wc:coins:delta", refreshCoins);     // optional delta event support
+    window.addEventListener("wc:packs:opened", refreshCoins);    // when a pack has been opened
+
+    return () => {
+      window.removeEventListener("wc:coins:refresh", refreshCoins);
+      window.removeEventListener("wc:coins:delta", refreshCoins);
+      window.removeEventListener("wc:packs:opened", refreshCoins);
+    };
+  }, []);
+
+  // After login, claim any guest win for today, then refresh pieces & coins.
   useEffect(() => {
     if (status === "authenticated") {
       fetch("/api/daily/claim", { method: "POST" })
         .finally(() => {
           window.dispatchEvent(new Event("wc:pieces:refresh"));
+          window.dispatchEvent(new Event("wc:coins:refresh"));
         });
     } else if (status === "unauthenticated") {
       window.dispatchEvent(new Event("wc:pieces:refresh"));
+      window.dispatchEvent(new Event("wc:coins:refresh"));
     }
   }, [status]);
 
@@ -186,8 +209,8 @@ export default function Header() {
         <div className="flex items-center gap-2">
           {/* Live pieces counter (🧩) */}
           <PiecesBadge />
-          {/* NEW: WordCoins (🪙) */}
-          <WordCoinsBadge />
+          {/* WordCoins (🪙) — keyed to force refresh when events fire */}
+          <WordCoinsBadge key={coinsTick} />
           <ThemeToggle />
           <AuthGate compact />
         </div>

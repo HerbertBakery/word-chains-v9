@@ -3,7 +3,14 @@
 
 export const dynamic = "force-dynamic"; // avoid SSG issues with search params
 
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -22,9 +29,27 @@ import {
 import { prngFromSeed } from "@/lib/seed";
 import ChainLeaderboard from "./ChainLeaderboard";
 import { recordDiscovery } from "@/lib/chaindex";
-import type { DexCat } from "@/lib/chaindex"; // ← added type-only import
+import type { DexCat } from "@/lib/chaindex";
 
-/* ===================== Constants ===================== */
+import { useDeck } from "@/app/hooks/useDeck";
+
+type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+
+const CARD_MULT: Record<Rarity, number> = {
+  COMMON: 2,
+  RARE: 3,
+  EPIC: 5,
+  LEGENDARY: 10,
+};
+const CARD_THRESH: Record<Rarity, number> = {
+  COMMON: 0,
+  RARE: 1,
+  EPIC: 2,
+  LEGENDARY: 3,
+};
+
+/* ========================================================================== */
+
 const CHAIN_BASE = {
   normal: 1,
   name: 2,
@@ -70,17 +95,20 @@ const CAT_BORDER: Record<ChainKey, string> = {
 };
 const ALL: ChainKey[] = ["name", "animal", "country", "food", "brand", "screen"];
 
+/** left vs right powers */
+const LEFT_CATS: ChainKey[] = ["name", "animal", "country"];
+const RIGHT_CATS: ChainKey[] = ["food", "brand", "screen"];
+
 type PowerRule = { threshold?: number; label?: string };
 const POWER_RULES: Record<ChainKey, PowerRule> = {
   country: { threshold: 5, label: "Nuke" },
   name: { threshold: 5, label: "ChatGPT" },
   food: { threshold: 3, label: "Letter Roll" },
-  screen: { threshold: 6, label: "Time Freeze" }, // ← updated to 6
+  screen: { threshold: 6, label: "Time Freeze" },
   brand: { threshold: 3, label: "Influencer" },
   animal: { threshold: 3, label: "Beast Mode" },
 };
 
-/** Map Chain categories → Dex categories for discovery (fix) */
 const CHAIN_TO_DEX: Record<ChainKey, DexCat> = {
   name: "name",
   animal: "animal",
@@ -90,6 +118,116 @@ const CHAIN_TO_DEX: Record<ChainKey, DexCat> = {
   screen: "screen",
 };
 
+/* ===================== Rarity color mapping ===================== */
+const RARITY_STYLE: Record<Rarity, any> = {
+  COMMON: {
+    card: "bg-green-500/20",
+    border: "border-green-500/40",
+    text: "text-green-800 dark:text-green-200",
+    chip: "bg-green-500/80 text-white",
+  },
+  RARE: {
+    card: "bg-blue-500/20",
+    border: "border-blue-500/40",
+    text: "text-blue-800 dark:text-blue-200",
+    chip: "bg-blue-500/80 text-white",
+  },
+  EPIC: {
+    card: "bg-purple-500/20",
+    border: "border-purple-500/40",
+    text: "text-purple-800 dark:text-purple-200",
+    chip: "bg-purple-500/80 text-white",
+  },
+  LEGENDARY: {
+    card: "bg-amber-500/20",
+    border: "border-amber-500/40",
+    text: "text-amber-800 dark:text-amber-200",
+    chip: "bg-amber-500/80 text-white",
+  },
+};
+
+/* ===================== PowerCard component ===================== */
+/** Tweaks:
+ *  - Added max-w and mx-auto so the rectangles are shorter (narrower) and visually tighter.
+ *  - This reduces “visual length” on the sides to afford a wider-feeling center column.
+ */
+function PowerCard({
+  cat,
+  charges,
+  threshold,
+  length,
+  onUse,
+}: {
+  cat: ChainKey;
+  charges: number;
+  threshold?: number;
+  length: number;
+  onUse: (c: ChainKey) => void;
+}) {
+  const prog = threshold ? length % threshold : 0;
+  const pct = threshold
+    ? Math.min(100, Math.floor((prog / threshold) * 100))
+    : 0;
+
+  return (
+    <div
+      key={cat}
+      className={`relative overflow-hidden rounded-2xl border px-3 py-3 bg-white/70 dark:bg-slate-900/60 ${CAT_BORDER[cat]} max-w-[220px] mx-auto`} // ← compact side card
+    >
+      {threshold && (
+        <div
+          className={`pointer-events-none absolute inset-y-0 left-0 w-full bg-gradient-to-r ${CAT_COLORS[cat]}`}
+          style={{ clipPath: `inset(0 ${(100 - pct)}% 0 0)` }}
+          aria-hidden
+        />
+      )}
+      <div className="relative z-10 flex items-center justify-between">
+        <div className="font-semibold">{CAT_LABELS[cat]}</div>
+        {!threshold && <div className="text-xs opacity-60">No Power</div>}
+      </div>
+      <div className="relative z-10 mt-2 flex items-center justify-between">
+        <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <div
+            className="h-2 rounded-full bg-slate-900 dark:bg-slate-100 transition-all"
+            style={{ width: `${threshold ? pct : 0}%` }}
+          />
+        </div>
+        <div className="ml-3 shrink-0 flex items-center gap-2">
+          {threshold && (
+            <span
+              className={`rounded-full border px-2 py-0.5 text-xs tabular-nums ${
+                charges > 0
+                  ? "border-emerald-400 text-emerald-600 dark:border-emerald-300 dark:text-emerald-300"
+                  : "border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400"
+              }`}
+              title="Charges available"
+            >
+              {charges}
+            </span>
+          )}
+          <button
+            className={`rounded-full px-3 py-1 text-xs font-semibold shadow ${
+              threshold && charges > 0
+                ? "bg-emerald-600 text-white hover:opacity-90"
+                : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+            }`}
+            disabled={!threshold || charges <= 0}
+            onClick={() => onUse(cat)}
+            title={
+              threshold
+                ? charges > 0
+                  ? `Use ${POWER_RULES[cat].label} (${charges})`
+                  : `${POWER_RULES[cat].label} locked`
+                : "No power configured"
+            }
+          >
+            {threshold ? POWER_RULES[cat].label ?? "Locked" : "No Power"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 /* ===================== Inner component (uses useSearchParams) ===================== */
 function ChainModeInner() {
   const { play } = useSound();
@@ -97,9 +235,8 @@ function ChainModeInner() {
 
   const sp = useSearchParams();
   const seed = sp.get("seed") || "";
-  const matchId = sp.get("match"); // present when playing Ranked/Ladder
+  const matchId = sp.get("match");
 
-  // Seeded RNG for ranked; fallback to Math.random for normal Chain mode
   const seededRand = useMemo(() => prngFromSeed(seed), [seed]);
   const rand = useCallback(() => (seed ? seededRand() : Math.random()), [seed, seededRand]);
 
@@ -240,6 +377,24 @@ function ChainModeInner() {
         chains.brand.multiplier +
         chains.screen.multiplier
     );
+
+  /* ===================== Deck state & charge tracking ===================== */
+  const { slots } = useDeck();
+  const [lastUseByCat, setLastUseByCat] = useState<Record<ChainKey, number>>({
+    name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0,
+  });
+
+  // NEW: track which deck slots have been used this run; used cards are crossed-out, colorless, disabled, and stop charging.
+  const [usedDeckSlots, setUsedDeckSlots] = useState<Set<number>>(new Set());
+
+  function isDeckCardReady(cat: ChainKey, rarity: Rarity): boolean {
+    const need = CARD_THRESH[rarity];
+    const lastUseLen = lastUseByCat[cat] ?? 0;
+    const currentLen = chains[cat].length;
+    const since = Math.max(0, currentLen - lastUseLen);
+    return since >= need;
+  }
+
   /* ===================== Helpers ===================== */
   const pickStarter = useCallback(() => {
     if (!dict || dict.size === 0) return "start";
@@ -258,7 +413,7 @@ function ChainModeInner() {
     setIsOver(false);
     setUsed(new Set());
     setScore(0);
-    setChainLength(0); // reset accurate chain counter
+    setChainLength(0);
     setBasePowerMult(1);
     setChains({
       name: { length: 0, multiplier: 1 },
@@ -268,7 +423,6 @@ function ChainModeInner() {
       brand: { length: 0, multiplier: 1 },
       screen: { length: 0, multiplier: 1 },
     });
-    // Reset charges: all 1 except Brands & Animals (0)
     setPowerCharges({ name: 1, animal: 0, country: 1, food: 1, brand: 0, screen: 1 });
     setSkips(SKIP_START);
     setCorrectStreak(0);
@@ -281,6 +435,8 @@ function ChainModeInner() {
     setLast(pickStarter());
     nextCategory();
     setTimeLeft(15);
+    setLastUseByCat({ name: 0, animal: 0, country: 0, food: 0, brand: 0, screen: 0 });
+    setUsedDeckSlots(new Set()); // reset used deck cards
   }, [pickStarter, nextCategory]);
 
   const start = () => {
@@ -324,26 +480,18 @@ function ChainModeInner() {
   const postedRef = useRef(false);
   useEffect(() => {
     if (!started || !isOver) return;
-    if (postedRef.current) return; // guard
+    if (postedRef.current) return;
 
     const submit = async () => {
-      postedRef.current = true; // prevent duplicate attempts
+      postedRef.current = true;
       setSubmitState("idle");
       setSubmitError(null);
 
       const headers = { "content-type": "application/json", "cache-control": "no-store" as const };
-
-      // helper to POST JSON with cookies
       const postJson = (url: string, body: any) =>
-        fetch(url, {
-          method: "POST",
-          headers,
-          credentials: "include", // include session cookies for auth
-          body: JSON.stringify(body),
-        });
+        fetch(url, { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
 
       try {
-        // Ranked result (if applicable)
         if (matchId) {
           const r = await fetch(`/api/ranked/${matchId}`, {
             method: "PUT",
@@ -360,7 +508,6 @@ function ChainModeInner() {
           }
         }
 
-        // Chain leaderboard submit (always try)
         const r2 = await postJson("/api/chain/submit", { score, longestChain: chainLength });
         if (!r2.ok) {
           const msg = `Chain submit failed: ${r2.status} ${r2.statusText}`;
@@ -370,7 +517,6 @@ function ChainModeInner() {
           return;
         }
 
-        // success
         setSubmitState("success");
         if (matchId) setResultHref(`/play/ranked/result?match=${matchId}`);
       } catch (err: any) {
@@ -420,7 +566,8 @@ function ChainModeInner() {
     setTimeLeft(15);
   }, [isOver, started, skips, play, pickStarter, nextCategory]);
 
-  const applyAcceptedWord = useCallback((w: string) => {
+  /* ===================== applyAcceptedWord (supports extraMultiplier) ===================== */
+  const applyAcceptedWord = useCallback((w: string, extraMultiplier: number = 1) => {
     const wl = w.toLowerCase();
 
     const enteringCats = getCategories(w);
@@ -446,7 +593,6 @@ function ChainModeInner() {
         const gained = afterTier - beforeTier;
         if (gained > 0) {
           nx[k] = (nx[k] || 0) + gained;
-          // play once per charge gained
           try {
             for (let i = 0; i < gained; i++) play(`power_${k}_ready`);
           } catch {}
@@ -457,23 +603,21 @@ function ChainModeInner() {
 
     const catsArr = Array.from(enteringCats);
     const base = catsArr.length ? Math.max(...catsArr.map((k) => (CHAIN_BASE as any)[k] ?? 1)) : CHAIN_BASE.normal;
-    const gainedPoints = Math.round(w.length * base * totalMult * Math.max(1, basePowerMult));
+    const gainedPoints = Math.round(w.length * base * totalMult * Math.max(1, basePowerMult) * Math.max(1, extraMultiplier));
     setScore((s) => s + gainedPoints);
 
-    // 🔎 Record discovery for ALL relevant categories (fix)
+    // Record discovery
     try {
       const dexCats = new Set<DexCat>();
       enteringCats.forEach((k) => dexCats.add(CHAIN_TO_DEX[k]));
-      if (dexCats.size) {
-        void recordDiscovery({ word: w, categories: dexCats });
-      }
+      if (dexCats.size) void recordDiscovery({ word: w, categories: dexCats });
     } catch {}
 
     try { play("accept"); } catch {}
     try { vfx.ringBurstAtFromEl("input[name='word']"); } catch {}
 
-    setUsed((u) => new Set(u).add(wl)); // used set may be nuked later
-    setChainLength((n) => n + 1);       // true chain length (never nuked)
+    setUsed((u) => new Set(u).add(wl));
+    setChainLength((n) => n + 1);
     setLast(w);
     setTimeLeft(15);
     nextCategory();
@@ -528,8 +672,7 @@ function ChainModeInner() {
     try { play(`power_${cat}_use`); } catch {}
 
     if (cat === "country") {
-      // NUKE: allow reusing words by clearing the "used" set
-      setUsed(new Set());
+      setUsed(new Set()); // NUKE
       try { play("nuke"); } catch {}
       try { vfx.glowOnce("main"); } catch {}
     } else if (cat === "name") {
@@ -538,7 +681,7 @@ function ChainModeInner() {
         // refund the charge
         setPowerCharges((prev) => ({ ...prev, [cat]: (prev[cat] || 0) + 1 }));
         try { play("lifeLost"); } catch {}
-        try { vfx.shake(".rounded-2xl.border.p-5", 350); } catch {}
+        try { vfx.shake(".deckbar", 350); } catch {}
         return;
       }
       try { play("ai"); } catch {}
@@ -577,6 +720,95 @@ function ChainModeInner() {
       try { vfx.confettiBurst({ power: 0.35 }); } catch {}
     }
   }, [powerCharges, play, vfx, pickAutoWordForCurrent, applyAcceptedWord, last, rand]);
+
+  /* ===================== Click-to-use deck card ===================== */
+  const useDeckCard = useCallback(async (slotIdx: number) => {
+    if (!started || isOver) return;
+
+    // If this slot's card was already used this run, it's permanently disabled.
+    if (usedDeckSlots.has(slotIdx)) {
+      try { play("used"); } catch {}
+      try { vfx.shake(".deckbar", 200); } catch {}
+      return;
+    }
+
+    const slot = (slots || []).find(s => s.slotIndex === slotIdx);
+    const card = slot?.card as (null | { word: string; category: ChainKey; rarity: Rarity });
+    if (!card) return;
+
+    if (card.category !== category) {
+      try { play("lifeLost"); } catch {}
+      try { vfx.shake(".deckbar", 250); } catch {}
+      return;
+    }
+
+    if (!isDeckCardReady(category, card.rarity)) {
+      try { play("lifeLost"); } catch {}
+      try { vfx.shake(".deckbar", 250); } catch {}
+      return;
+    }
+
+    const w = card.word.trim();
+    const wl = w.toLowerCase();
+
+    if (used.has(wl)) {
+      try { play("used"); } catch {}
+      try { vfx.shake(".deckbar", 250); } catch {}
+      return;
+    }
+
+        // More forgiving validation for deck cards (handles punctuation like ":" or "-")
+    const tryWord = async (s: string) => {
+      const ok = await validateWord(s);
+      const cats = getCategories(s);
+      return { ok, cats };
+    };
+
+    let { ok, cats } = await tryWord(w);
+
+    if (!ok || !cats.has(category)) {
+      // Retry with a sanitized variant: drop punctuation, collapse spaces.
+      const alt = w
+        .replace(/[:\-–—]/g, " ")                // turn separators into spaces
+        .replace(/[^\p{L}\p{N} ]/gu, "")         // strip other punctuation
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (alt && alt !== w) {
+        const res = await tryWord(alt);
+        ok = res.ok;
+        cats = res.cats;
+      }
+    }
+
+    if (!ok || !cats.has(category)) {
+      // Final fallback: deck cards are curated and already category-locked above.
+      // If it’s charged and category matches, allow usage even if detector missed the exact title formatting.
+      if (card.category !== category) {
+        try { play("lifeLost"); } catch {}
+        try { vfx.shake(".deckbar", 250); } catch {}
+        return;
+      }
+      // proceed (treated as valid)
+    }
+
+
+    const mult = CARD_MULT[card.rarity] || 1;
+    const nextLen = (chains[category].length || 0) + 1;
+    setLastUseByCat(prev => ({ ...prev, [category]: nextLen }));
+
+    try { play("coin"); } catch {}
+    try { vfx.confettiBurst({ power: 0.6 }); } catch {}
+
+    applyAcceptedWord(w, mult);
+
+    // Mark this slot as permanently used (crossed out, colorless, disabled, no further charging).
+    setUsedDeckSlots(prev => {
+      const nx = new Set(prev);
+      nx.add(slotIdx);
+      return nx;
+    });
+  }, [started, isOver, slots, category, isDeckCardReady, used, validateWord, getCategories, chains, applyAcceptedWord, play, vfx, usedDeckSlots]);
 
   /* ===================== Submit handler ===================== */
   const onSubmit = async (e: React.FormEvent) => {
@@ -629,11 +861,10 @@ function ChainModeInner() {
 
     applyAcceptedWord(w);
   };
-
   /* ===================== UI ===================== */
   return (
     <VfxProvider>
-      <main className="mx-auto max-w-3xl px-4 py-8 text-slate-900 dark:text-slate-200">
+      <main className="mx-auto max-w-6xl px-4 py-8 text-slate-900 dark:text-slate-200">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Chain Mode</h1>
           <Link
@@ -690,184 +921,411 @@ function ChainModeInner() {
 
         {/* Playing */}
         {started && !isOver && (
-          <div className="space-y-6">
-            {/* Timer */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm uppercase tracking-wide opacity-70">Time Left</span>
-                <div className="flex items-center gap-3">
-                  {freezeLeft > 0 && (
-                    <span className="rounded-full border px-2 py-0.5 text-xs tabular-nums border-emerald-400 text-emerald-500 dark:border-emerald-300 dark:text-emerald-300">
-                      Frozen {freezeLeft}s
-                    </span>
-                  )}
-                  <span className="text-lg font-semibold tabular-nums">{timeLeft}s</span>
-                </div>
-              </div>
-              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
-                <div
-                  className="h-2 rounded-full bg-emerald-500 transition-all"
-                  style={{ width: `${Math.max(0, Math.min(100, (timeLeft / 15) * 100))}%` }}
-                />
-              </div>
-            </div>
+          <>
+            {/* xl+: sidebars for powers (3 each) with wide center */}
+            <div className="hidden xl:grid gap-6 xl:grid-cols-[220px,minmax(680px,1fr),220px] max-w-[1200px] mx-auto justify-center">
+              {/* LEFT POWERS */}
+              <aside className="space-y-3">
+                <div className="text-sm uppercase tracking-wide opacity-70">Powers</div>
+                {LEFT_CATS.map((cat) => (
+                  <PowerCard
+                    key={cat}
+                    cat={cat}
+                    charges={powerCharges[cat] || 0}
+                    threshold={POWER_RULES[cat].threshold}
+                    length={chains[cat].length}
+                    onUse={triggerPower}
+                  />
+                ))}
+              </aside>
 
-            {/* Current objective */}
-            <div className="rounded-2xl border p-5 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-              <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Current Category</div>
-              <div className="text-2xl font-bold">{CAT_LABELS[category]}</div>
-              <div className="mt-2 text-sm opacity-70">
-                Last word:&nbsp;
-                <span className="font-semibold text-2xl leading-none">
-                  {last === "start" ? "—" : last}
-                </span>
-              </div>
-              {last !== "start" && (
-                <div className="mt-1 text-xs opacity-70">
-                  Required start:&nbsp;
-                  <span className="font-semibold uppercase">
-                    {lastLetter(last).toUpperCase()}
-                  </span>
-                  &nbsp;• must contain:&nbsp;
-                  <span className="font-semibold uppercase">{firstLetter(last).toUpperCase()}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Input row + Skip */}
-            <form onSubmit={onSubmit} className="flex gap-2">
-              <input
-                name="word"
-                placeholder="Type your next word…"
-                className="grow rounded-2xl border px-4 py-3 outline-none ring-0
-                           bg-white border-gray-300 text-slate-900 placeholder-slate-400
-                           focus:border-black
-                           dark:bg-slate-800 dark:border-slate-500 dark:text-slate-100 dark:placeholder-slate-300
-                           dark:focus:border-white caret-current"
-                autoFocus
-                onKeyDown={onKeyDownSFX}
-              />
-              <button type="submit" className="rounded-2xl bg-black px-5 py-3 text-white shadow hover:opacity-90">
-                Enter
-              </button>
-              <button
-                type="button"
-                onClick={doSkip}
-                disabled={skips <= 0}
-                className={`rounded-2xl px-5 py-3 shadow hover:opacity-90 ${
-                  skips > 0
-                    ? "bg-indigo-600 text-white"
-                    : "cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-slate-700 dark:text-slate-400"
-                }`}
-                title={skips > 0 ? "Skip this category and get a new starter" : "No skips available"}
-              >
-                Skip ({skips})
-              </button>
-            </form>
-
-            {/* HUD */}
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-                <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
-                <div className="text-2xl font-bold tabular-nums">{score}</div>
-              </div>
-              {/* REPLACED 'Words Played' with 'Chain Length' */}
-              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-                <div className="text-xs uppercase tracking-wide opacity-70">Chain Length</div>
-                <div className="text-2xl font-bold tabular-nums">{chainLength}</div>
-              </div>
-              <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
-                <div className="text-xs uppercase tracking-wide opacity-70">Base Multiplier</div>
-                <div className="text-2xl font-bold">{fmt(basePowerMult)}</div>
-              </div>
-            </div>
-
-            {/* Category progress grid (no numeric progress; show charges only) */}
-            <div className="space-y-2">
-              <div className="text-sm uppercase tracking-wide opacity-70">Category Powers</div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {ALL.map((cat) => {
-                  const charges = powerCharges[cat] || 0;
-                  const rule = POWER_RULES[cat];
-                  const threshold = rule.threshold;
-                  const length = chains[cat].length;
-                  const prog = threshold ? (length % threshold) : 0;
-                  const pct = threshold ? Math.min(100, Math.floor((prog / threshold) * 100)) : 0;
-
-                  return (
-                    <div
-                      key={cat}
-                      className={`relative overflow-hidden rounded-2xl border px-3 py-3 bg-white/70 dark:bg-slate-900/60 ${CAT_BORDER[cat]}`}
-                    >
-                      {threshold && (
-                        <div
-                          className={`pointer-events-none absolute inset-y-0 left-0 w-full bg-gradient-to-r ${CAT_COLORS[cat]}`}
-                          style={{ clipPath: `inset(0 ${(100 - pct)}% 0 0)` }}
-                          aria-hidden
-                        />
+              {/* CENTER UI */}
+              <section className="space-y-6 min-w-0 max-w-[760px] mx-auto">
+                {/* 1) Timer */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm uppercase tracking-wide opacity-70">Time Left</span>
+                    <div className="flex items-center gap-3">
+                      {freezeLeft > 0 && (
+                        <span className="rounded-full border px-2 py-0.5 text-xs tabular-nums border-emerald-400 text-emerald-500 dark:border-emerald-300 dark:text-emerald-300">
+                          Frozen {freezeLeft}s
+                        </span>
                       )}
-                      <div className="relative z-10 flex items-center justify-between">
-                        <div className="font-semibold">{CAT_LABELS[cat]}</div>
-                        {!threshold && <div className="text-xs opacity-60">No Power</div>}
-                      </div>
-                      <div className="relative z-10 mt-2 flex items-center justify-between">
-                        <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full bg-slate-900 dark:bg-slate-100 transition-all"
-                            style={{ width: `${threshold ? pct : 0}%` }}
-                          />
-                        </div>
-                        <div className="ml-3 shrink-0 flex items-center gap-2">
-                          {/* Charge count pill (active charges) */}
-                          {threshold && (
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-xs tabular-nums ${
-                                charges > 0
-                                  ? "border-emerald-400 text-emerald-600 dark:border-emerald-300 dark:text-emerald-300"
-                                  : "border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400"
-                              }`}
-                              title="Charges available"
-                            >
-                              {charges}
+                      <span className="text-lg font-semibold tabular-nums">{timeLeft}s</span>
+                    </div>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
+                    <div
+                      className="h-2 rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${Math.max(0, Math.min(100, (timeLeft / 15) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* 2) Score + Chain + Base Multiplier */}
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                  <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                    <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
+                    <div className="text-2xl font-bold tabular-nums">{score}</div>
+                  </div>
+                  <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                    <div className="text-xs uppercase tracking-wide opacity-70">Chain Length</div>
+                    <div className="text-2xl font-bold tabular-nums">{chainLength}</div>
+                  </div>
+                  <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                    <div className="text-xs uppercase tracking-wide opacity-70">Base Multiplier</div>
+                    <div className="text-2xl font-bold">{fmt(basePowerMult)}</div>
+                  </div>
+                </div>
+
+                {/* 3) Current objective */}
+                <div className="rounded-2xl border p-5 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                  <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Current Category</div>
+                  <div className="text-2xl font-bold">{CAT_LABELS[category]}</div>
+                  <div className="mt-2 text-sm opacity-70">
+                    Last word:&nbsp;
+                    <span className="font-semibold text-2xl leading-none">
+                      {last === "start" ? "—" : last}
+                    </span>
+                  </div>
+                  {last !== "start" && (
+                    <div className="mt-1 text-xs opacity-70">
+                      Required start:&nbsp;
+                      <span className="font-semibold uppercase">
+                        {lastLetter(last).toUpperCase()}
+                      </span>
+                      &nbsp;• must contain:&nbsp;
+                      <span className="font-semibold uppercase">{firstLetter(last).toUpperCase()}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4) Submit box + Skip */}
+                <form onSubmit={onSubmit} className="flex gap-2">
+                  <input
+                    name="word"
+                    placeholder="Type your next word…"
+                    className="grow rounded-2xl border px-4 py-3 outline-none ring-0
+                               bg-white border-gray-300 text-slate-900 placeholder-slate-400
+                               focus:border-black
+                               dark:bg-slate-800 dark:border-slate-500 dark:text-slate-100 dark:placeholder-slate-300
+                               dark:focus:border-white caret-current"
+                    autoFocus
+                    onKeyDown={onKeyDownSFX}
+                  />
+                  <button type="submit" className="rounded-2xl bg-black px-5 py-3 text-white shadow hover:opacity-90">
+                    Enter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={doSkip}
+                    disabled={skips <= 0}
+                    className={`rounded-2xl px-5 py-3 shadow hover:opacity-90 ${
+                      skips > 0
+                        ? "bg-indigo-600 text-white"
+                        : "cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-slate-700 dark:text-slate-400"
+                    }`}
+                    title={skips > 0 ? "Skip this category and get a new starter" : "No skips available"}
+                  >
+                    Skip ({skips})
+                  </button>
+                </form>
+
+                {/* 5) Deck cards — show rarity colors until used; once used, cross out + grayscale + disabled + no more charging */}
+                <div className="deckbar rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                  <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Deck Cards</div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[0,1,2].map(i => {
+                      const slot = (slots || []).find(s => s.slotIndex === i);
+                      const c = slot?.card as (null | { word: string; category: ChainKey; rarity: Rarity });
+                      if (!c) {
+                        return (
+                          <div key={i} className="rounded-2xl border p-3">
+                            <div className="text-xs opacity-70 mb-1">Slot {i+1}</div>
+                            <div className="opacity-60 text-sm">Empty</div>
+                          </div>
+                        );
+                      }
+
+                      const usedOut = usedDeckSlots.has(i);
+                      const need = CARD_THRESH[c.rarity];
+                      const since = Math.max(0, (chains[c.category]?.length ?? 0) - (lastUseByCat[c.category] ?? 0));
+                      const ready = !usedOut && c.category === category && since >= need;
+                      const clamped = Math.min(since, need);
+
+                      const rs = RARITY_STYLE[c.rarity];
+                      const baseCardCls = usedOut
+                        ? "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 grayscale"
+                        : `${rs.card} ${rs.border} ${rs.text}`;
+
+                      const chipCls = usedOut
+                        ? "bg-slate-400 text-white"
+                        : rs.chip;
+
+                      return (
+                        <div key={i} className={`relative rounded-2xl border p-3 ${baseCardCls}`}>
+                          <div className="text-xs opacity-80 mb-1">Slot {i+1}</div>
+                          <div className="flex items-center justify-between">
+                            <div className={`font-semibold ${usedOut ? "line-through" : ""}`}>{c.word}</div>
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${chipCls}`}>
+                              {usedOut ? "USED" : c.rarity}
                             </span>
+                          </div>
+
+                          <div className="text-xs opacity-80 mt-1">Category: {c.category}</div>
+
+                          {/* Charge readout — hidden once used */}
+                          {!usedOut && (
+                            <div className="mt-1 text-xs">
+                              {need === 0 ? (
+                                <span className="text-emerald-700 dark:text-emerald-300 font-semibold">Ready</span>
+                              ) : (
+                                <>
+                                  Charge:&nbsp;
+                                  <span className="tabular-nums font-semibold">
+                                    {clamped}/{need}
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           )}
+
                           <button
-                            className={`rounded-full px-3 py-1 text-xs font-semibold shadow ${
-                              threshold && charges > 0
-                                ? "bg-emerald-600 text-white hover:opacity-90"
-                                : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+                            onClick={() => void useDeckCard(i)}
+                            disabled={usedOut || !ready || isOver}
+                            className={`mt-2 rounded-full px-3 py-1 text-xs font-semibold shadow ${
+                              usedOut
+                                ? "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+                                : ready
+                                  ? "bg-emerald-600 text-white hover:opacity-90"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
                             }`}
-                            disabled={!threshold || charges <= 0}
-                            onClick={() => triggerPower(cat)}
                             title={
-                              threshold
-                                ? (charges > 0
-                                  ? `Use ${POWER_RULES[cat].label} (${charges})`
-                                  : `${POWER_RULES[cat].label} locked`)
-                                : "No power configured"
+                              usedOut
+                                ? "Already used this run"
+                                : c.category !== category
+                                  ? "Available when this category is active"
+                                  : ready
+                                    ? `Play this card for ×${CARD_MULT[c.rarity]} score`
+                                    : "Charging…"
                             }
                           >
-                            {threshold ? (POWER_RULES[cat].label ?? "Locked") : "No Power"}
+                            {usedOut ? "Used" : `Use Card ${ready ? `×${CARD_MULT[c.rarity]}` : ""}`}
                           </button>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 text-xs opacity-70">
+                    Cards ignore link constraints (start/contain) but must match the current category and be charged.
+                    Once a card is used, it’s crossed out, loses all color, and is disabled for the rest of the run.
+                  </div>
+                </div>
+              </section>
+
+              {/* RIGHT POWERS */}
+              <aside className="space-y-3">
+                <div className="text-sm uppercase tracking-wide opacity-70">Powers</div>
+                {RIGHT_CATS.map((cat) => (
+                  <PowerCard
+                    key={cat}
+                    cat={cat}
+                    charges={powerCharges[cat] || 0}
+                    threshold={POWER_RULES[cat].threshold}
+                    length={chains[cat].length}
+                    onUse={triggerPower}
+                  />
+                ))}
+              </aside>
+            </div>
+
+            {/* < xl : stack center UI first; compact powers below */}
+            <div className="xl:hidden space-y-6">
+              {/* 1) Timer */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm uppercase tracking-wide opacity-70">Time Left</span>
+                  <div className="flex items-center gap-3">
+                    {freezeLeft > 0 && (
+                      <span className="rounded-full border px-2 py-0.5 text-xs tabular-nums border-emerald-400 text-emerald-500 dark:border-emerald-300 dark:text-emerald-300">
+                        Frozen {freezeLeft}s
+                      </span>
+                    )}
+                    <span className="text-lg font-semibold tabular-nums">{timeLeft}s</span>
+                  </div>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700">
+                  <div
+                    className="h-2 rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.max(0, Math.min(100, (timeLeft / 15) * 100))}%` }}
+                  />
+                </div>
               </div>
-              <div className="text-xs opacity-70">
-                Countries(5) → <b>Nuke</b>; Names(5) → <b>ChatGPT</b>; Foods(3) → <b>Letter Roll</b>; TV/Movies(6) → <b>Time Freeze</b>; Brands(3) → <b>Influencer (+3 Base)</b>; Animals(3) → <b>Beast Mode (+1 Base)</b>.
+
+              {/* 2) Score + Chain + Base */}
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                  <div className="text-xs uppercase tracking-wide opacity-70">Score</div>
+                  <div className="text-2xl font-bold tabular-nums">{score}</div>
+                </div>
+                <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                  <div className="text-xs uppercase tracking-wide opacity-70">Chain Length</div>
+                  <div className="text-2xl font-bold tabular-nums">{chainLength}</div>
+                </div>
+                <div className="rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                  <div className="text-xs uppercase tracking-wide opacity-70">Base Multiplier</div>
+                  <div className="text-2xl font-bold">{fmt(basePowerMult)}</div>
+                </div>
+              </div>
+
+              {/* 3) Current category */}
+              <div className="rounded-2xl border p-5 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Current Category</div>
+                <div className="text-2xl font-bold">{CAT_LABELS[category]}</div>
+                <div className="mt-2 text-sm opacity-70">
+                  Last word:&nbsp;
+                  <span className="font-semibold text-2xl leading-none">
+                    {last === "start" ? "—" : last}
+                  </span>
+                </div>
+                {last !== "start" && (
+                  <div className="mt-1 text-xs opacity-70">
+                    Required start:&nbsp;
+                    <span className="font-semibold uppercase">
+                      {lastLetter(last).toUpperCase()}
+                    </span>
+                    &nbsp;• must contain:&nbsp;
+                    <span className="font-semibold uppercase">{firstLetter(last).toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 4) Input + Skip */}
+              <form onSubmit={onSubmit} className="flex gap-2">
+                <input
+                  name="word"
+                  placeholder="Type your next word…"
+                  className="grow rounded-2xl border px-4 py-3 outline-none ring-0
+                             bg-white border-gray-300 text-slate-900 placeholder-slate-400
+                             focus:border-black
+                             dark:bg-slate-800 dark:border-slate-500 dark:text-slate-100 dark:placeholder-slate-300
+                             dark:focus:border-white caret-current"
+                  autoFocus
+                  onKeyDown={onKeyDownSFX}
+                />
+                <button type="submit" className="rounded-2xl bg-black px-5 py-3 text-white shadow hover:opacity-90">
+                  Enter
+                </button>
+                <button
+                  type="button"
+                  onClick={doSkip}
+                  disabled={skips <= 0}
+                  className={`rounded-2xl px-5 py-3 shadow hover:opacity-90 ${
+                    skips > 0
+                      ? "bg-indigo-600 text-white"
+                      : "cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-slate-700 dark:text-slate-400"
+                  }`}
+                >
+                  Skip ({skips})
+                </button>
+              </form>
+
+              {/* 5) Deck cards (mobile) */}
+              <div className="deckbar rounded-2xl border p-4 bg-white/70 border-gray-200 dark:bg-slate-900/60 dark:border-slate-700">
+                <div className="mb-2 text-sm uppercase tracking-wide opacity-70">Deck Cards</div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[0,1,2].map(i => {
+                    const slot = (slots || []).find(s => s.slotIndex === i);
+                    const c = slot?.card as (null | { word: string; category: ChainKey; rarity: Rarity });
+                    if (!c) {
+                      return (
+                        <div key={i} className="rounded-2xl border p-3">
+                          <div className="text-xs opacity-70 mb-1">Slot {i+1}</div>
+                          <div className="opacity-60 text-sm">Empty</div>
+                        </div>
+                      );
+                    }
+
+                    const usedOut = usedDeckSlots.has(i);
+                    const need = CARD_THRESH[c.rarity];
+                    const since = Math.max(0, (chains[c.category]?.length ?? 0) - (lastUseByCat[c.category] ?? 0));
+                    const ready = !usedOut && c.category === category && since >= need;
+                    const clamped = Math.min(since, need);
+
+                    const rs = RARITY_STYLE[c.rarity];
+                    const baseCardCls = usedOut
+                      ? "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 grayscale"
+                      : `${rs.card} ${rs.border} ${rs.text}`;
+
+                    const chipCls = usedOut
+                      ? "bg-slate-400 text-white"
+                      : rs.chip;
+
+                    return (
+                      <div key={i} className={`relative rounded-2xl border p-3 ${baseCardCls}`}>
+                        <div className="text-xs opacity-80 mb-1">Slot {i+1}</div>
+                        <div className="flex items-center justify-between">
+                          <div className={`font-semibold ${usedOut ? "line-through" : ""}`}>{c.word}</div>
+                          <span className={`text-xs rounded-full px-2 py-0.5 ${chipCls}`}>
+                            {usedOut ? "USED" : c.rarity}
+                          </span>
+                        </div>
+                        <div className="text-xs opacity-80 mt-1">Category: {c.category}</div>
+
+                        {!usedOut && (
+                          <div className="mt-1 text-xs">
+                            {need === 0 ? (
+                              <span className="text-emerald-700 dark:text-emerald-300 font-semibold">Ready</span>
+                            ) : (
+                              <>Charge: <span className="tabular-nums font-semibold">{clamped}/{need}</span></>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => void useDeckCard(i)}
+                          disabled={usedOut || !ready || isOver}
+                          className={`mt-2 rounded-full px-3 py-1 text-xs font-semibold shadow ${
+                            usedOut
+                              ? "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+                              : ready
+                                ? "bg-emerald-600 text-white hover:opacity-90"
+                                : "bg-slate-200 dark:bg-slate-700 text-slate-500 cursor-not-allowed"
+                          }`}
+                        >
+                          {usedOut ? "Used" : `Use Card ${ready ? `×${CARD_MULT[c.rarity]}` : ""}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Compact powers */}
+              <div className="mt-4">
+                <div className="text-sm uppercase tracking-wide opacity-70 mb-2">Powers</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[...LEFT_CATS, ...RIGHT_CATS].map((cat) => (
+                    <PowerCard
+                      key={cat}
+                      cat={cat}
+                      charges={powerCharges[cat] || 0}
+                      threshold={POWER_RULES[cat].threshold}
+                      length={chains[cat].length}
+                      onUse={triggerPower}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
 
-        {/* Run over: stats + actions (no auto-redirect) */}
+        {/* Run over: stats + actions */}
         {isOver && (
           <div className="rounded-2xl border p-6 text-center bg-white/80 border-gray-200 dark:bg-slate-900/80 dark:border-slate-700">
             <h2 className="mb-1 text-xl font-bold">Run Over</h2>
 
-            {/* Submit status */}
             {submitState === "success" && (
               <p className="opacity-80">Your score has been submitted.</p>
             )}
@@ -953,7 +1411,7 @@ export default function ChainMode() {
   return (
     <Suspense
       fallback={
-        <main className="mx-auto max-w-3xl px-4 py-8">
+        <main className="mx-auto max-w-6xl px-4 py-8">
           <div className="rounded-2xl border p-6 bg-white/80 dark:bg-slate-900/80">
             <div className="h-4 w-40 rounded bg-slate-200 dark:bg-slate-700 mb-3" />
             <div className="h-3 w-64 rounded bg-slate-200 dark:bg-slate-700" />

@@ -31,16 +31,14 @@ if (process.env.GITHUB_ID && process.env.GITHUB_SECRET) {
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers,
-  // You are using database sessions — keep it
+  // Using DB sessions
   session: { strategy: "database" },
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === "development",
 
   callbacks: {
     /**
-     * With database sessions, `user` can be undefined in this callback
-     * (especially in API routes). We must not read user.id blindly.
-     * We compute an id from (user?.id || session.user.id || lookup by email).
+     * Compute and expose session.user.id & session.user.username safely with DB sessions.
      */
     async session({ session, user }) {
       if (!session.user) return session;
@@ -48,7 +46,7 @@ export const authOptions: NextAuthOptions = {
       let uid: string | null | undefined =
         (session.user as any).id || user?.id || null;
 
-      // If still no id, try fetching by email once.
+      // If still missing, look up by email once
       if (!uid && session.user.email) {
         const u = await prisma.user.findUnique({
           where: { email: session.user.email },
@@ -62,7 +60,6 @@ export const authOptions: NextAuthOptions = {
       }
 
       (session.user as any).id = uid ?? null;
-      // Preserve username if already set by adapter; otherwise take from `user` when present.
       if ((session.user as any).username === undefined) {
         (session.user as any).username =
           (user as any)?.username ?? (session.user as any).username ?? null;
@@ -85,9 +82,30 @@ export const authOptions: NextAuthOptions = {
         userId: session?.user ? (session.user as any).id : null,
       });
     },
+
+    /**
+     * ✅ Grant 100 starting WordCoins exactly once per user at creation.
+     * Creates wallet with balance=100 and a ledger txn. Guarded against double-run.
+     */
     async createUser({ user }) {
       console.log("[next-auth][event][createUser]", { userId: (user as any)?.id });
+      const userId = (user as any)?.id;
+      if (!userId) return;
+
+      await prisma.$transaction(async (tx) => {
+        const existing = await tx.wordcoinWallet.findUnique({ where: { userId } });
+        if (existing) return;
+
+        await tx.wordcoinWallet.create({
+          data: { userId, balance: 100 },
+        });
+
+        await tx.wordcoinTxn.create({
+          data: { userId, amount: 100, reason: { type: "onboarding_bonus" } },
+        });
+      });
     },
+
     async linkAccount({ user, account }) {
       console.log("[next-auth][event][linkAccount]", {
         userId: (user as any)?.id,

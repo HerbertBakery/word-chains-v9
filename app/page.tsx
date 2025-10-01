@@ -32,7 +32,7 @@ export default function Page() {
             {/* ✅ Route to the modern Play page */}
             <Link href="/play" className="btn btn-primary">Play now</Link>
             <Link href="/leaderboard" className="btn btn-ghost">Leaderboard</Link>
-            <Link href="/stats" className="btn btn-ghost">Stats</Link>
+            <Link href="/chaindex" className="btn btn-ghost">ChainDex</Link>
             <Link href="/rules" className="btn btn-ghost">Rules</Link>
             <AuthGate compact />
           </div>
