@@ -73,26 +73,25 @@ export default function BankPage() {
     return s;
   }, [slots]);
 
-  // MINIMAL CHANGE: prevent putting same word into multiple slots
+  // FIX: add id back into deckCard so it matches useDeck.BankCard type
   const putInSlot = (slotIndex: number, cardId: string) => {
     const card = cards.find((c) => c.id === cardId) || null;
     if (!card) return;
 
     const wordLower = card.word.toLowerCase();
-    // If the same word already exists in a different slot, block it
     const duplicateInAnotherSlot = slots.some(
       (s) =>
         s.slotIndex !== slotIndex &&
         s.card?.word?.toLowerCase() === wordLower
     );
     if (duplicateInAnotherSlot) {
-      // gentle UX; you can swap alert for toast if you have one
       alert(`You can’t use “${card.word}” in more than one slot.`);
       return;
     }
 
-    // ✅ Adapt BankCard (category: string) → DeckCard (category: ChainKey union)
+    // ✅ include id
     const deckCard = {
+      id: card.id,
       word: card.word,
       category: card.category as ChainKey,
       rarity: card.rarity as Rarity,
@@ -251,7 +250,6 @@ export default function BankPage() {
           const r = c.rarity as Rarity;
           const style = RARITY_STYLES[r];
 
-          // Nice-to-have: disable “Put in Slot” if this word is already in *another* slot
           const wordLower = c.word.toLowerCase();
           const dupInDeck = wordsInDeck.has(wordLower);
 
@@ -277,7 +275,6 @@ export default function BankPage() {
                     key={i}
                     onClick={() => putInSlot(i, c.id)}
                     disabled={
-                      // disable if this exact word is already used by some slot (prevents duplicates)
                       dupInDeck &&
                       !slots.some(
                         (s) =>
