@@ -1,8 +1,10 @@
+// app/word-bank/page.tsx
 "use client";
 
 import { useBank } from "@/app/hooks/useBank";
 import { useDeck } from "@/app/hooks/useDeck";
 import { useMemo, useState } from "react";
+import type { ChainKey } from "@/lib/game/shared";
 
 /** Rarity → styles (unchanged) */
 type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
@@ -89,10 +91,17 @@ export default function BankPage() {
       return;
     }
 
+    // ✅ Adapt BankCard (category: string) → DeckCard (category: ChainKey union)
+    const deckCard = {
+      word: card.word,
+      category: card.category as ChainKey,
+      rarity: card.rarity as Rarity,
+    };
+
     setSlots((prev) => {
       const next = [...prev];
       const i = next.findIndex((s) => s.slotIndex === slotIndex);
-      if (i >= 0) next[i] = { slotIndex, card };
+      if (i >= 0) next[i] = { slotIndex, card: deckCard };
       return next;
     });
   };
