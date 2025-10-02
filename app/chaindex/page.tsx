@@ -257,6 +257,36 @@ function BrandIcon({ name, state, size = 44 }: { name: string; state: DexState; 
   );
 }
 
+/** Logo-or-fallback (mutually exclusive) */
+function BrandLogoOrFallback({
+  name,
+  state,
+  url,
+  size = 44,
+}: {
+  name: string;
+  state: DexState;
+  url?: string;
+  size?: number;
+}) {
+  const [failed, setFailed] = React.useState(false);
+  if (!url || failed) {
+    return <BrandIcon name={name} state={state} size={size} />;
+  }
+  return (
+    <img
+      src={url}
+      alt={name}
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={state !== "claimed" ? "opacity-40 grayscale" : ""}
+      style={{ objectFit: "contain" }}
+    />
+  );
+}
+
 // 🍔 Foods
 const FOOD_EMOJI: Record<string, string> = {
   pizza: "🍕",
@@ -390,6 +420,9 @@ export default function ChainDexPage() {
     name_top1000: [],
   });
 
+  // brand logos lookup: normalized brand name → logo URL
+  const [brandLogos, setBrandLogos] = useState<Record<string, string>>({});
+
   // discovered / claimed (SERVER-DRIVEN)
   const [discovered, setDiscovered] = useState<Record<Tab, Set<string>>>(() => {
     const out = {} as Record<Tab, Set<string>>;
@@ -432,6 +465,25 @@ export default function ChainDexPage() {
         fetchToplist("food"),
         fetchToplist("name"),
       ]);
+
+      // Load the logos JSON (objects: { name, logo })
+      try {
+        const lr = await fetch("/toplists/brands_top_100_logos.json", { cache: "no-store" });
+        if (lr.ok) {
+          const arr: Array<{ name: string; logo: string }> = await lr.json();
+          const map: Record<string, string> = {};
+          for (const it of arr) {
+            const k = normKey(stripCorpSuffixes(it.name));
+            if (!map[k]) map[k] = it.logo;
+          }
+          setBrandLogos(map);
+          console.log(`[ChainDex] Loaded ${arr.length} brand logos`);
+        } else {
+          console.warn("[ChainDex] brand logos JSON not found at /toplists/brands_top_100_logos.json");
+        }
+      } catch (e) {
+        console.warn("[ChainDex] failed to load brand logos:", e);
+      }
 
       setRaw({ animal: animals, country: countries, screen, brand, food, name });
 
@@ -605,6 +657,10 @@ export default function ChainDexPage() {
             onClaim(tab, w, rect);
           };
 
+          // brand logo lookup (normalized)
+          const brandKey = normKey(stripCorpSuffixes(w));
+          const logoUrl = tab === "brand_top250" ? brandLogos[brandKey] : undefined;
+
           return (
             <button
               key={`${tab}:${w}`}
@@ -627,6 +683,7 @@ export default function ChainDexPage() {
               <div className="flex h-full w-full flex-col items-center justify-center">
                 {/* Icon per tab */}
                 {tab === "animal" && <DexAnimalIcon name={w} state={state} size={44} />}
+
                 {tab === "country" && (
                   <Flag
                     countryName={w}
@@ -640,8 +697,13 @@ export default function ChainDexPage() {
                     }
                   />
                 )}
+
                 {tab === "screen_top250" && <ScreenIcon title={w} state={state} size={44} />}
-                {tab === "brand_top250" && <BrandIcon name={w} state={state} size={44} />}
+
+                {tab === "brand_top250" && (
+                  <BrandLogoOrFallback name={w} state={state} url={logoUrl} size={44} />
+                )}
+
                 {tab === "food_top250" && <FoodIcon name={w} state={state} size={44} />}
                 {tab === "name_top1000" && <NameIcon name={w} state={state} size={44} />}
 
